@@ -983,7 +983,6 @@ asyncio.run(main())
 **Key rule:** `async def` marks a coroutine, `await` pauses until it resolves, and `asyncio.run()` starts the event loop. Never use `time.sleep()` inside async code — use `asyncio.sleep()`.
 
 ---
----
 
 # Object-Oriented Programming (OOP)
 
@@ -1002,6 +1001,22 @@ class Car:
 
 car1 = Car("Toyota", "Corolla")
 print(car1.info())
+```
+
+### DevOps/Cloud Example
+
+```python
+class EC2Instance:
+    def __init__(self, instance_id, instance_type, region):
+        self.instance_id = instance_id
+        self.instance_type = instance_type
+        self.region = region
+
+    def info(self):
+        return f"{self.instance_id} ({self.instance_type}) in {self.region}"
+
+server = EC2Instance("i-0abc123", "t2.micro", "us-east-1")
+print(server.info())
 ```
 
 ## Inheritance
@@ -1025,6 +1040,173 @@ class Car(Vehicle):
 print(Car("Honda", "Civic").describe())
 ```
 
+### DevOps/Cloud Example
+
+```python
+class CloudResource:
+    def __init__(self, name):
+        self.name = name
+
+    def deploy(self):
+        return f"Deploying {self.name}"
+
+class Container(CloudResource):
+    def __init__(self, name, image):
+        super().__init__(name)
+        self.image = image
+
+    def deploy(self):
+        return f"{super().deploy()} using image {self.image}"
+
+print(Container("api-service", "nginx:latest").deploy())
+```
+
+### Types of Inheritance
+
+```python
+# 1. Single Inheritance
+class Server:
+    def start(self):
+        return "Server starting"
+
+class WebServer(Server):
+    pass
+
+# 2. Multilevel Inheritance
+class BaseResource:
+    def tag(self):
+        return "tagged"
+
+class VirtualMachine(BaseResource):
+    pass
+
+class GPUInstance(VirtualMachine):
+    pass
+
+# 3. Hierarchical Inheritance (one parent, many children)
+class CloudService:
+    def billing(self):
+        return "billed monthly"
+
+class Storage(CloudService):
+    pass
+
+class Compute(CloudService):
+    pass
+
+# 4. Multiple Inheritance (one child, many parents)
+class Loggable:
+    def log(self):
+        return "logging enabled"
+
+class Scalable:
+    def scale(self):
+        return "auto-scaling enabled"
+
+class Microservice(Loggable, Scalable):
+    pass
+
+svc = Microservice()
+print(svc.log(), svc.scale())
+
+# 5. Hybrid Inheritance (combination of the above patterns)
+class Monitored:
+    def monitor(self):
+        return "monitoring active"
+
+class Deployable(CloudService, Monitored):
+    pass
+```
+
+**Quick rule:** Python resolves multiple/hybrid inheritance using MRO (Method Resolution Order) — check with `ClassName.__mro__`.
+
+## Method Overriding
+
+Overriding = a subclass redefines a method that already exists in its parent class, with the **same name and signature**, to change its behavior.
+
+```python
+class Notifier:
+    def send(self, message):
+        return f"Generic notification: {message}"
+
+class EmailNotifier(Notifier):
+    def send(self, message):   # overrides parent method
+        return f"Email sent: {message}"
+
+class SlackNotifier(Notifier):
+    def send(self, message):   # overrides parent method
+        return f"Slack alert: {message}"
+
+for notifier in [EmailNotifier(), SlackNotifier()]:
+    print(notifier.send("Deployment successful"))
+```
+
+### DevOps/Cloud Example
+
+```python
+class DeploymentStrategy:
+    def deploy(self):
+        return "Standard deployment"
+
+class BlueGreenDeployment(DeploymentStrategy):
+    def deploy(self):
+        return "Blue-Green deployment: switching traffic to new environment"
+
+class CanaryDeployment(DeploymentStrategy):
+    def deploy(self):
+        return "Canary deployment: rolling out to 10% of traffic first"
+
+print(BlueGreenDeployment().deploy())
+print(CanaryDeployment().deploy())
+```
+
+## Method Overloading
+
+Python doesn't support true method overloading (same method name, different parameter lists) like Java/C++. It's simulated using **default arguments**, `*args`, or the `functools.singledispatch` decorator.
+
+```python
+# Simulated with default arguments
+class Calculator:
+    def add(self, a, b, c=0):
+        return a + b + c
+
+calc = Calculator()
+print(calc.add(2, 3))          # 5
+print(calc.add(2, 3, 4))          # 9
+```
+
+```python
+# Simulated with *args
+class Calculator:
+    def add(self, *args):
+        return sum(args)
+
+calc = Calculator()
+print(calc.add(1, 2))          # 3
+print(calc.add(1, 2, 3, 4))       # 10
+```
+
+### DevOps/Cloud Example
+
+```python
+from functools import singledispatch
+
+@singledispatch
+def scale_resource(resource):
+    raise NotImplementedError("Unsupported resource type")
+
+@scale_resource.register
+def _(resource: int):
+    return f"Scaling {resource} EC2 instances"
+
+@scale_resource.register
+def _(resource: str):
+    return f"Scaling service: {resource}"
+
+print(scale_resource(5))              # Scaling 5 EC2 instances
+print(scale_resource("api-gateway"))     # Scaling service: api-gateway
+```
+
 ## Polymorphism
 
 ```python
@@ -1038,6 +1220,25 @@ class Dog:
 
 for animal in [Cat(), Dog()]:
     print(animal.speak())
+```
+
+### DevOps/Cloud Example
+
+```python
+class AWSDeployer:
+    def deploy(self):
+        return "Deploying to AWS via CloudFormation"
+
+class AzureDeployer:
+    def deploy(self):
+        return "Deploying to Azure via ARM templates"
+
+class GCPDeployer:
+    def deploy(self):
+        return "Deploying to GCP via Terraform"
+
+for deployer in [AWSDeployer(), AzureDeployer(), GCPDeployer()]:
+    print(deployer.deploy())   # same interface, different behavior
 ```
 
 ## Encapsulation
@@ -1058,6 +1259,77 @@ acc.deposit(50)
 print(acc.get_balance())   # 150
 ```
 
+### DevOps/Cloud Example
+
+```python
+class DatabaseConnection:
+    def __init__(self, password):
+        self.__password = password   # private, hidden from outside access
+
+    def connect(self):
+        return f"Connecting with password: {'*' * len(self.__password)}"
+
+db = DatabaseConnection("s3cr3t")
+print(db.connect())          # Connecting with password: *******
+# db.__password              # AttributeError — not directly accessible
+```
+
+## Property Decorator
+
+`@property` lets a method be accessed like an attribute — useful for validation, computed values, or controlled read/write access without changing the public interface.
+
+```python
+class Circle:
+    def __init__(self, radius):
+        self._radius = radius
+
+    @property
+    def radius(self):          # getter
+        return self._radius
+
+    @radius.setter
+    def radius(self, value):   # setter with validation
+        if value < 0:
+            raise ValueError("Radius cannot be negative")
+        self._radius = value
+
+    @property
+    def area(self):            # computed/read-only property
+        return 3.14 * self._radius ** 2
+
+c = Circle(5)
+print(c.radius)     # 5   (accessed like an attribute, not c.radius())
+print(c.area)          # 78.5
+c.radius = 10           # uses the setter
+```
+
+### DevOps/Cloud Example
+
+```python
+class ServerConfig:
+    def __init__(self, cpu_cores):
+        self._cpu_cores = cpu_cores
+
+    @property
+    def cpu_cores(self):
+        return self._cpu_cores
+
+    @cpu_cores.setter
+    def cpu_cores(self, value):
+        if value < 1:
+            raise ValueError("A server needs at least 1 CPU core")
+        self._cpu_cores = value
+
+    @property
+    def instance_size(self):
+        return "large" if self._cpu_cores >= 8 else "small"
+
+server = ServerConfig(4)
+print(server.instance_size)   # small
+server.cpu_cores = 16
+print(server.instance_size)      # large
+```
+
 ## Abstraction
 
 ```python
@@ -1076,6 +1348,28 @@ class Circle(Shape):
         return 3.14 * self.radius ** 2
 
 print(Circle(5).area())
+```
+
+### DevOps/Cloud Example
+
+```python
+from abc import ABC, abstractmethod
+
+class CloudProvisioner(ABC):
+    @abstractmethod
+    def provision(self):
+        pass
+
+class TerraformProvisioner(CloudProvisioner):
+    def provision(self):
+        return "Running terraform apply"
+
+class AnsibleProvisioner(CloudProvisioner):
+    def provision(self):
+        return "Running ansible-playbook"
+
+for tool in [TerraformProvisioner(), AnsibleProvisioner()]:
+    print(tool.provision())
 ```
 
 ## Magic / Dunder Methods
@@ -1119,6 +1413,139 @@ class Employee:
 
 print(Employee.total_employees())
 ```
+
+### DevOps/Cloud Example
+
+```python
+class Deployment:
+    active_deployments = 0
+
+    def __init__(self, name):
+        self.name = name
+        Deployment.active_deployments += 1
+
+    @classmethod
+    def total_active(cls):
+        return f"{cls.active_deployments} deployments currently active"
+
+    @staticmethod
+    def is_valid_env(env):
+        return env in ("dev", "staging", "prod")
+
+Deployment("api-v1")
+Deployment("worker-v2")
+print(Deployment.total_active())            # 2 deployments currently active
+print(Deployment.is_valid_env("prod"))         # True
+```
+
+## Association
+
+The weakest relationship — two independent classes interact with each other, but neither owns the other and both can exist without the other.
+
+```python
+class Developer:
+    def __init__(self, name):
+        self.name = name
+
+class Repository:
+    def __init__(self, name):
+        self.name = name
+
+def commit_code(developer, repository):
+    return f"{developer.name} pushed code to {repository.name}"
+
+dev = Developer("Alice")
+repo = Repository("backend-service")
+print(commit_code(dev, repo))   # both objects exist independently
+```
+
+## Aggregation
+
+A "has-a" relationship where one class contains another, but the contained object can exist independently (weak ownership — no lifecycle dependency).
+
+```python
+class Engineer:
+    def __init__(self, name):
+        self.name = name
+
+class Team:
+    def __init__(self, name, engineers):
+        self.name = name
+        self.engineers = engineers   # Team holds Engineers, but doesn't own their lifecycle
+
+alice = Engineer("Alice")
+bob = Engineer("Bob")
+
+devops_team = Team("DevOps", [alice, bob])
+print([e.name for e in devops_team.engineers])
+
+# Engineers still exist even if the team is deleted
+del devops_team
+print(alice.name)   # still valid
+```
+
+### DevOps/Cloud Example
+
+```python
+class LoadBalancer:
+    def __init__(self, name):
+        self.name = name
+
+class ServerFarm:
+    def __init__(self, load_balancers):
+        self.load_balancers = load_balancers   # shared/reusable across farms
+
+lb1 = LoadBalancer("lb-east")
+farm = ServerFarm([lb1])
+# lb1 can be reused by another farm independently
+```
+
+## Composition
+
+A stronger "has-a" relationship where the contained object's lifecycle depends entirely on the container — if the container is destroyed, so are its parts.
+
+```python
+class Engine:
+    def __init__(self, horsepower):
+        self.horsepower = horsepower
+
+class Car:
+    def __init__(self, brand):
+        self.brand = brand
+        self.engine = Engine(300)   # Engine is created and owned by Car
+
+    def start(self):
+        return f"{self.brand} starting with {self.engine.horsepower}hp engine"
+
+car = Car("Tesla")
+print(car.start())
+# If 'car' is deleted, its 'engine' has no independent existence
+```
+
+### DevOps/Cloud Example
+
+```python
+class Container:
+    def __init__(self, image):
+        self.image = image
+
+class Pod:
+    def __init__(self, name, image):
+        self.name = name
+        self.container = Container(image)   # Container's lifecycle is bound to the Pod
+
+    def status(self):
+        return f"Pod '{self.name}' running image '{self.container.image}'"
+
+pod = Pod("api-pod", "nginx:latest")
+print(pod.status())
+# Deleting the Pod deletes its Container too — strong ownership
+```
+
+**Quick rule:**
+- **Association** → "uses-a" (independent, loosely connected)
+- **Aggregation** → "has-a" (weak ownership, parts can outlive the whole)
+- **Composition** → "owns-a" (strong ownership, parts die with the whole)
 
 ---
 
