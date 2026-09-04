@@ -196,12 +196,40 @@ list("123")                # ['1', '2', '3']  (splits into chars, not [123])
 print(7 // 2, 7 % 2, 2 ** 3)   # 3 1 8
 
 # Comparison / Logical
-print(5 > 3 and 2 < 4)         # True
+print(5 > 3 and 2 < 4)          # True
+
+# Bitwise
+a, b = 5, 3                     # 101, 011
+
+print(a & b)                    # 1  → AND: 001
+print(a | b)                    # 7  → OR:  111
+print(a ^ b)                    # 6  → XOR: 110
+print(~a)                       # -6 → NOT
+print(a << 1)                   # 10 → left shift (× 2)
+print(a >> 1)                   # 2  → right shift (÷ 2)
 
 # Walrus operator (assignment inside expression)
 if (n := 10) > 5:
-    print(n)   # 10
+    print(n)                    # 10
 ```
+
+### Bitwise Quick Rules
+
+```python
+x = 1 << 3                      # 8 → set the 3rd bit
+print(x & 1)                    # 0 → check if even
+print(x | 2)                    # 10
+print(x ^ x)                    # 0 → XOR with itself
+```
+
+* `&` → AND
+* `|` → OR
+* `^` → XOR
+* `~` → NOT
+* `<<` → left shift
+* `>>` → right shift
+
+**Interview tip:** Bitwise operators are commonly used for **flags, masks, checking/set/clearing bits, XOR problems, and powers of 2**.
 
 ---
 
@@ -587,6 +615,242 @@ print(add5(10))   # 15
 
 ---
 
+# Modules & Packages
+
+## Creating and Importing a Module
+
+```python
+# file: mymath.py
+def add(a, b):
+    return a + b
+
+def subtract(a, b):
+    return a - b
+```
+
+```python
+# file: main.py
+import mymath
+
+print(mymath.add(2, 3))          # 5
+
+from mymath import subtract
+print(subtract(5, 2))               # 3
+
+import mymath as mm
+print(mm.add(1, 1))                    # 2
+
+from mymath import *                     # imports everything (avoid in large projects)
+```
+
+## Package Structure
+
+```text
+myproject/
+│
+├── mypackage/
+│   ├── __init__.py       # marks folder as a package
+│   ├── module_a.py
+│   └── module_b.py
+│
+└── main.py
+```
+
+```python
+# mypackage/__init__.py
+from .module_a import func_a
+from .module_b import func_b
+```
+
+```python
+# main.py
+from mypackage import func_a, func_b
+```
+
+## Relative vs Absolute Imports
+
+```python
+# absolute import
+from mypackage.module_a import func_a
+
+# relative import (used inside a package)
+from . import module_a
+from .module_b import func_b
+```
+
+## `__name__ == "__main__"` Pattern
+
+```python
+# file: script.py
+def main():
+    print("Running script directly")
+
+if __name__ == "__main__":
+    main()          # runs only when executed directly, not when imported
+```
+
+## Standard Library Useful Modules
+
+```python
+import os
+os.getcwd()                    # current working directory
+os.listdir(".")                   # list files in directory
+
+import sys
+sys.argv                       # command-line arguments
+sys.path                          # module search paths
+
+import datetime
+datetime.datetime.now()
+
+import random
+random.randint(1, 10)
+
+import re
+re.findall(r"\d+", "abc123def456")   # ['123', '456']
+```
+
+## Installing & Using Third-Party Packages
+
+```bash
+pip install requests
+```
+
+```python
+import requests
+```
+
+## Virtual Environments (isolate project dependencies)
+
+```bash
+python -m venv venv
+source venv/bin/activate      # Linux/macOS
+venv\Scripts\activate         # Windows
+
+pip install -r requirements.txt
+pip freeze > requirements.txt
+```
+
+---
+
+# API Calls
+
+## GET Request
+
+```python
+import requests
+
+response = requests.get("https://api.github.com/users/octocat")
+
+print(response.status_code)   # 200
+print(response.json())           # parsed JSON response as a dict
+```
+
+## GET with Query Parameters
+
+```python
+import requests
+
+params = {"q": "python", "sort": "stars"}
+response = requests.get("https://api.github.com/search/repositories", params=params)
+data = response.json()
+```
+
+## POST Request
+
+```python
+import requests
+
+payload = {"title": "Hello", "body": "World", "userId": 1}
+response = requests.post("https://jsonplaceholder.typicode.com/posts", json=payload)
+
+print(response.status_code)   # 201
+print(response.json())
+```
+
+## Headers and Authentication
+
+```python
+import requests
+
+headers = {
+    "Authorization": "Bearer YOUR_TOKEN",
+    "Content-Type": "application/json"
+}
+
+response = requests.get("https://api.example.com/data", headers=headers)
+```
+
+## PUT and DELETE
+
+```python
+import requests
+
+# Update
+requests.put("https://jsonplaceholder.typicode.com/posts/1", json={"title": "Updated"})
+
+# Delete
+requests.delete("https://jsonplaceholder.typicode.com/posts/1")
+```
+
+## Handling Errors and Timeouts
+
+```python
+import requests
+
+try:
+    response = requests.get("https://api.example.com/data", timeout=5)
+    response.raise_for_status()      # raises an error for 4xx/5xx status codes
+    data = response.json()
+except requests.exceptions.Timeout:
+    print("Request timed out")
+except requests.exceptions.HTTPError as e:
+    print(f"HTTP error: {e}")
+except requests.exceptions.RequestException as e:
+    print(f"Request failed: {e}")
+```
+
+## Async API Calls (with aiohttp)
+
+```python
+import aiohttp
+import asyncio
+
+async def fetch(session, url):
+    async with session.get(url) as response:
+        return await response.json()
+
+async def main():
+    async with aiohttp.ClientSession() as session:
+        data = await fetch(session, "https://api.github.com/users/octocat")
+        print(data)
+
+asyncio.run(main())
+```
+
+## Building a Simple API (with Flask)
+
+```python
+from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+
+@app.route("/hello", methods=["GET"])
+def hello():
+    return jsonify({"message": "Hello, World!"})
+
+@app.route("/add", methods=["POST"])
+def add():
+    data = request.get_json()
+    result = data["a"] + data["b"]
+    return jsonify({"result": result})
+
+if __name__ == "__main__":
+    app.run(debug=True)
+```
+
+---
+
 # Exception Handling
 
 ```python
@@ -625,6 +889,100 @@ with open("data.txt", "r") as f:
     lines = f.readlines()
 ```
 
+---
+
+# Asynchronous Programming
+
+Async code lets a program handle multiple I/O-bound tasks (network calls, file reads, DB queries) without blocking, using a single-threaded event loop instead of multiple threads.
+
+## async / await Basics
+
+```python
+import asyncio
+
+async def say_hello():
+    print("Start")
+    await asyncio.sleep(1)   # non-blocking wait
+    print("End")
+
+asyncio.run(say_hello())
+```
+
+## Running Tasks Concurrently
+
+```python
+import asyncio
+
+async def fetch_data(name, delay):
+    await asyncio.sleep(delay)
+    print(f"{name} done")
+    return name
+
+async def main():
+    results = await asyncio.gather(
+        fetch_data("Task1", 2),
+        fetch_data("Task2", 1),
+        fetch_data("Task3", 3)
+    )
+    print(results)   # runs concurrently, finishes in ~3s not 6s
+
+asyncio.run(main())
+```
+
+## Creating Tasks (fire-and-forget style)
+
+```python
+import asyncio
+
+async def worker(n):
+    await asyncio.sleep(1)
+    return n * n
+
+async def main():
+    task1 = asyncio.create_task(worker(2))
+    task2 = asyncio.create_task(worker(3))
+    print(await task1, await task2)   # 4 9
+
+asyncio.run(main())
+```
+
+## async for and async with
+
+```python
+import asyncio
+
+async def async_generator():
+    for i in range(3):
+        await asyncio.sleep(0.5)
+        yield i
+
+async def main():
+    async for value in async_generator():
+        print(value)   # 0 1 2
+
+asyncio.run(main())
+```
+
+## Timeouts
+
+```python
+import asyncio
+
+async def slow_task():
+    await asyncio.sleep(5)
+
+async def main():
+    try:
+        await asyncio.wait_for(slow_task(), timeout=2)
+    except asyncio.TimeoutError:
+        print("Task timed out")
+
+asyncio.run(main())
+```
+
+**Key rule:** `async def` marks a coroutine, `await` pauses until it resolves, and `asyncio.run()` starts the event loop. Never use `time.sleep()` inside async code — use `asyncio.sleep()`.
+
+---
 ---
 
 # Object-Oriented Programming (OOP)
@@ -784,6 +1142,100 @@ class Counter:
 for num in Counter(3):
     print(num)   # 1 2 3
 ```
+
+---
+
+# Generics (Type Hints & Generic Programming)
+
+Generics let functions and classes work with multiple types while still being type-checked (useful with `mypy` and IDEs).
+
+## Basic Type Hints
+
+```python
+def add(a: int, b: int) -> int:
+    return a + b
+
+def greet(name: str) -> str:
+    return f"Hello, {name}"
+```
+
+## Generic Functions with TypeVar
+
+```python
+from typing import TypeVar, List
+
+T = TypeVar("T")
+
+def first_element(items: List[T]) -> T:
+    return items[0]
+
+print(first_element([1, 2, 3]))       # 1
+print(first_element(["a", "b"]))        # "a"
+```
+
+## Generic Classes
+
+```python
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
+
+class Box(Generic[T]):
+    def __init__(self, item: T):
+        self.item = item
+
+    def get(self) -> T:
+        return self.item
+
+int_box = Box(123)
+str_box = Box("hello")
+print(int_box.get(), str_box.get())
+```
+
+## Bounded TypeVar (restrict allowed types)
+
+```python
+from typing import TypeVar
+
+Number = TypeVar("Number", int, float)
+
+def double(x: Number) -> Number:
+    return x * 2
+
+print(double(5))       # 10
+print(double(2.5))       # 5.0
+```
+
+## Modern Generic Syntax (Python 3.12+)
+
+```python
+def first(items: list[T]) -> T:
+    return items[0]
+
+class Stack[T]:
+    def __init__(self):
+        self.items: list[T] = []
+
+    def push(self, item: T) -> None:
+        self.items.append(item)
+
+    def pop(self) -> T:
+        return self.items.pop()
+```
+
+## Optional and Union Types
+
+```python
+from typing import Optional, Union
+
+def find_user(user_id: int) -> Optional[str]:
+    return "Alice" if user_id == 1 else None
+
+def process(value: Union[int, str]) -> str:
+    return str(value)
+```
+
+**Key rule:** Generics document *what type goes in and out* without hardcoding a single type — the same function/class works safely across `int`, `str`, custom objects, etc.
 
 ---
 
