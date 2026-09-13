@@ -214,16 +214,117 @@ The intentional process of introducing redundancy into a normalized database to 
 ## Categories of SQL Commands
 
 ### DDL (Data Definition Language)
-Defines database structure. Commands: `CREATE`, `ALTER`, `DROP`, `TRUNCATE`.
+Defines database structure. Commands: `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `RENAME`.
+
+**CREATE** — defines a new table, view, index, or database object.
+```sql
+CREATE TABLE Employee (
+    EmpID INT PRIMARY KEY,
+    Name VARCHAR(50) NOT NULL,
+    DeptID INT,
+    Salary DECIMAL(10,2)
+);
+```
+
+**ALTER** — modifies an existing table structure (add/drop/modify columns).
+```sql
+ALTER TABLE Employee ADD Email VARCHAR(100);
+ALTER TABLE Employee MODIFY Salary DECIMAL(12,2);
+ALTER TABLE Employee DROP COLUMN Email;
+```
+
+**DROP** — permanently removes a table/object and its data from the database.
+```sql
+DROP TABLE Employee;
+```
+
+**TRUNCATE** — removes all rows from a table quickly, but keeps the table structure. Cannot be rolled back in most DBMSs (unlike `DELETE`) since it doesn't log individual row deletions.
+```sql
+TRUNCATE TABLE Employee;
+```
+
+**RENAME** — renames a database object.
+```sql
+RENAME TABLE Employee TO Staff;
+```
+
+**Pattern to solve DDL questions:** If the question mentions *"structure"*, *"schema"*, *"remove all data but keep the table"*, or *"add/remove a column"* — it's DDL. `TRUNCATE` vs `DELETE` is a classic trick: TRUNCATE = fast, no WHERE clause, resets structure only; DELETE = row-by-row, logged, supports WHERE, can be rolled back.
+
+---
 
 ### DML (Data Manipulation Language)
 Manipulates data within tables. Commands: `SELECT`, `INSERT`, `UPDATE`, `DELETE`.
 
+**SELECT** — retrieves data from one or more tables.
+```sql
+SELECT Name, Salary FROM Employee WHERE DeptID = 3;
+```
+
+**INSERT** — adds new rows to a table.
+```sql
+INSERT INTO Employee (EmpID, Name, DeptID, Salary)
+VALUES (101, 'Asha Roy', 3, 55000);
+```
+
+**UPDATE** — modifies existing rows.
+```sql
+UPDATE Employee SET Salary = Salary * 1.10 WHERE DeptID = 3;
+```
+
+**DELETE** — removes rows matching a condition (logged, rollback-able, supports WHERE).
+```sql
+DELETE FROM Employee WHERE EmpID = 101;
+```
+
+**Pattern to solve DML questions:** These questions ask you to *change data*, not structure. If a WHERE clause is missing on UPDATE/DELETE, flag it — that's the most common "what could go wrong here" trap (it affects **all** rows).
+
+---
+
 ### DCL (Data Control Language)
 Controls access permissions. Commands: `GRANT`, `REVOKE`.
 
+**GRANT** — gives a user specific privileges.
+```sql
+GRANT SELECT, INSERT ON Employee TO 'analyst_user';
+```
+
+**REVOKE** — removes previously granted privileges.
+```sql
+REVOKE INSERT ON Employee FROM 'analyst_user';
+```
+
+**Pattern to solve DCL questions:** Look for keywords like *"permission"*, *"access control"*, *"authorize a user"* — always `GRANT`/`REVOKE`, never DML.
+
+---
+
 ### TCL (Transaction Control Language)
 Manages transactions. Commands: `COMMIT`, `ROLLBACK`, `SAVEPOINT`.
+
+**COMMIT** — permanently saves all changes made in the current transaction.
+```sql
+BEGIN TRANSACTION;
+UPDATE Employee SET Salary = Salary + 5000 WHERE EmpID = 101;
+COMMIT;
+```
+
+**ROLLBACK** — undoes changes made in the current transaction (back to last commit or savepoint).
+```sql
+BEGIN TRANSACTION;
+UPDATE Employee SET Salary = 0 WHERE EmpID = 101;
+ROLLBACK;
+```
+
+**SAVEPOINT** — sets a named point within a transaction to roll back to, without undoing the whole transaction.
+```sql
+BEGIN TRANSACTION;
+UPDATE Employee SET Salary = Salary + 1000 WHERE DeptID = 1;
+SAVEPOINT sp1;
+UPDATE Employee SET Salary = Salary - 500 WHERE DeptID = 2;
+ROLLBACK TO sp1;
+COMMIT;
+```
+
+**Pattern to solve TCL questions:** These pair naturally with ACID scenario questions (see Question 4 below). If a scenario says *"undo part of a transaction but keep the rest"*, that's `SAVEPOINT` + partial `ROLLBACK`.
 
 ## Joins
 
@@ -245,17 +346,118 @@ A table is joined with itself, typically used to compare rows within the same ta
 ### Cross Join
 Produces the Cartesian product of two tables — every row of one table combined with every row of the other.
 
+
+### Join Syntax Examples
+
+```sql
+-- Inner Join
+SELECT e.Name, d.DeptName
+FROM Employee e
+INNER JOIN Department d ON e.DeptID = d.DeptID;
+
+-- Left Join
+SELECT e.Name, d.DeptName
+FROM Employee e
+LEFT JOIN Department d ON e.DeptID = d.DeptID;
+
+-- Right Join
+SELECT e.Name, d.DeptName
+FROM Employee e
+RIGHT JOIN Department d ON e.DeptID = d.DeptID;
+
+-- Full Outer Join
+SELECT e.Name, d.DeptName
+FROM Employee e
+FULL OUTER JOIN Department d ON e.DeptID = d.DeptID;
+
+-- Self Join (employees and their managers)
+SELECT emp.Name AS Employee, mgr.Name AS Manager
+FROM Employee emp
+JOIN Employee mgr ON emp.ManagerID = mgr.EmpID;
+
+-- Cross Join
+SELECT e.Name, p.ProjectName
+FROM Employee e
+CROSS JOIN Project p;
+```
+
+**Pattern to solve Join questions:** Ask "do I need unmatched rows kept?" — no → `INNER JOIN`; keep unmatched left rows → `LEFT JOIN`; keep unmatched right rows → `RIGHT JOIN`; keep unmatched from both → `FULL OUTER JOIN`. If the question compares rows *within the same table* (e.g., "employee and manager," "same city"), it's a `SELF JOIN`. If it asks for *every possible combination* with no condition, it's a `CROSS JOIN`.
+
 ## Subqueries
 
 A query nested inside another query, used in `SELECT`, `WHERE`, or `FROM` clauses to filter or compute values based on another dataset.
+
+
+**Types of Subqueries:**
+
+- **Single-row subquery** — returns one row, used with `=`, `>`, `<`.
+- **Multi-row subquery** — returns multiple rows, used with `IN`, `ANY`, `ALL`.
+- **Correlated subquery** — references a column from the outer query; re-evaluated for each outer row.
+
+```sql
+-- Single-row subquery
+SELECT Name FROM Employee
+WHERE Salary = (SELECT MAX(Salary) FROM Employee);
+
+-- Multi-row subquery
+SELECT Name FROM Employee
+WHERE DeptID IN (SELECT DeptID FROM Department WHERE Location = 'Kolkata');
+
+-- Correlated subquery (employees earning above their department's average)
+SELECT Name, Salary, DeptID FROM Employee e1
+WHERE Salary > (
+    SELECT AVG(Salary) FROM Employee e2 WHERE e2.DeptID = e1.DeptID
+);
+```
+
+**Pattern to solve Subquery questions:** If the inner query's result depends on the outer query's current row (references outer table's column), it's **correlated** — it runs once per outer row. If it can run independently and returns a fixed set of values first, it's a plain (non-correlated) subquery. "Find employees earning more than the average of *their own* department" is the classic correlated-subquery signal.
 
 ## Aggregate Functions
 
 Functions like `COUNT()`, `SUM()`, `AVG()`, `MIN()`, and `MAX()` that operate on a set of values and return a single summarized value, often used with `GROUP BY` and filtered using `HAVING`.
 
+
+```sql
+-- Total employees per department
+SELECT DeptID, COUNT(*) AS TotalEmployees
+FROM Employee
+GROUP BY DeptID;
+
+-- Departments with average salary above 50000
+SELECT DeptID, AVG(Salary) AS AvgSalary
+FROM Employee
+GROUP BY DeptID
+HAVING AVG(Salary) > 50000;
+```
+
+**Pattern to solve Aggregate questions:** `WHERE` filters rows *before* grouping; `HAVING` filters groups *after* aggregation. If the condition involves an aggregate function (`COUNT`, `AVG`, `SUM`, etc.), it must go in `HAVING`, never `WHERE`.
+
 ## Views
 
 A virtual table based on the result of a stored SQL query. Views do not store data themselves (in most cases) but simplify complex queries and add a layer of abstraction and security.
+
+
+```sql
+-- Create a view
+CREATE VIEW HighEarners AS
+SELECT Name, DeptID, Salary
+FROM Employee
+WHERE Salary > 80000;
+
+-- Query a view like a table
+SELECT * FROM HighEarners;
+
+-- Update a view's definition
+CREATE OR REPLACE VIEW HighEarners AS
+SELECT Name, DeptID, Salary
+FROM Employee
+WHERE Salary > 90000;
+
+-- Drop a view
+DROP VIEW HighEarners;
+```
+
+**Pattern to solve View questions:** Reach for a view when a question mentions *"hide certain columns from some users,"* *"simplify a repeated complex query,"* or *"restrict access to a subset of rows/columns"* without duplicating data.
 
 ## Indexes
 
