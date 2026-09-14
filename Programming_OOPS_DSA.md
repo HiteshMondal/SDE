@@ -1779,6 +1779,12 @@ def move_zeroes(nums):
 
 ### Basic circular traversal pattern
 
+Use Modulo to access repeating cycle of numbers
+
+0 % 5 = 0; 1 % 5 = 1; 2 % 5 = 2; 3 % 5 = 3; 4 % 5 = 4;
+5 % 5 = 0; 6 % 5 = 1; 7 % 5 = 2; 8 % 5 = 3; 9 % 5 = 4; 
+10 % 5 = 0;
+
 ```python
 arr = [10, 20, 30, 40, 50]
 n = len(arr)
@@ -1804,13 +1810,13 @@ for _ in range(n):
     i = (i + 1) % n
 ```
 
-### Bomb Defuse
+### Lock Defuse
 
 ```python
 # Input: code = [5,7,1,4], k = 3; code = [2,4,9,3], k = -2
 # Output: [12,10,16,13]; [12,5,6,13]
-# Explanation: Each number is replaced by the sum of the next 3 numbers. The decrypted code is [7+1+4, 1+4+5, 4+5+7, 5+7+1]. Notice that the numbers wrap around.
-Explanation: The decrypted code is [3+9, 2+3, 4+2, 9+4]. Notice that the numbers wrap around again. If k is negative, the sum is of the previous numbers.
+# Explanation: Each number is replaced by the sum of the next 3 numbers. The decrypted code is [7+1+4, 1+4+5, 4+5+7, 5+7+1].
+# Explanation: The decrypted code is [3+9, 2+3, 4+2, 9+4]. If k is negative, the sum is of the previous numbers.
 
 def decrypt(code, k):
     n = len(code)
