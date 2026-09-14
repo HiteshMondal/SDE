@@ -1775,6 +1775,63 @@ def move_zeroes(nums):
             left += 1
 ```
 
+## Circular array
+
+### Basic circular traversal pattern
+
+```python
+arr = [10, 20, 30, 40, 50]
+n = len(arr)
+
+i = 0
+
+for _ in range(n):
+    print(arr[i])
+    i = (i + 1) % n
+```
+
+### Starting from any index
+
+```python
+arr = [10, 20, 30, 40, 50]
+n = len(arr)
+
+start = 2
+i = start
+
+for _ in range(n):
+    print(arr[i])
+    i = (i + 1) % n
+```
+
+### Bomb Defuse
+
+```python
+# Input: code = [5,7,1,4], k = 3; code = [2,4,9,3], k = -2
+# Output: [12,10,16,13]; [12,5,6,13]
+# Explanation: Each number is replaced by the sum of the next 3 numbers. The decrypted code is [7+1+4, 1+4+5, 4+5+7, 5+7+1]. Notice that the numbers wrap around.
+Explanation: The decrypted code is [3+9, 2+3, 4+2, 9+4]. Notice that the numbers wrap around again. If k is negative, the sum is of the previous numbers.
+
+def decrypt(code, k):
+    n = len(code)
+    arr = [0] * n
+
+    if k == 0:
+        return arr
+
+    for i in range(n):
+        if k > 0:
+            for j in range(1, k + 1):
+                arr[i] += code[(i + j) % n]
+
+        else:
+            for j in range(1, abs(k) + 1):
+                arr[i] += code[(i - j) % n]
+
+    return arr
+
+```
+
 ## Sliding Window
 
 ```python
