@@ -432,6 +432,346 @@ HAVING AVG(Salary) > 50000;
 
 **Pattern to solve Aggregate questions:** `WHERE` filters rows *before* grouping; `HAVING` filters groups *after* aggregation. If the condition involves an aggregate function (`COUNT`, `AVG`, `SUM`, etc.), it must go in `HAVING`, never `WHERE`.
 
+## WHERE vs GROUP BY vs HAVING vs ORDER BY
+
+These four clauses are easy to confuse. Remember:
+
+* **WHERE** → filters individual rows
+* **GROUP BY** → combines rows into groups
+* **HAVING** → filters groups
+* **ORDER BY** → sorts the final result
+
+### Quick Mental Model
+
+Think of a SQL query as a sequence:
+
+```text
+FROM
+  ↓
+WHERE       → Which individual rows do I want?
+  ↓
+GROUP BY    → Which rows should be put together?
+  ↓
+HAVING      → Which groups do I want to keep?
+  ↓
+SELECT      → What do I want to show?
+  ↓
+ORDER BY    → In what order should I show it?
+```
+
+### 1. WHERE — Filter Individual Rows
+
+Use `WHERE` when you want to filter individual records.
+
+```sql
+SELECT Name, Salary
+FROM Employee
+WHERE Salary > 40000;
+```
+
+This asks:
+
+> "Which employees have a salary greater than 40,000?"
+
+Think:
+
+**WHERE = filter rows**
+
+---
+
+### 2. GROUP BY — Create Groups
+
+Use `GROUP BY` when you want to combine rows that have the same value and perform an aggregate calculation on each group.
+
+```sql
+SELECT DeptID, COUNT(*) AS EmployeeCount
+FROM Employee
+GROUP BY DeptID;
+```
+
+This asks:
+
+> "How many employees are in each department?"
+
+For example:
+
+```text
+DeptID = 1 → 3 employees
+DeptID = 2 → 5 employees
+DeptID = 3 → 2 employees
+```
+
+Think:
+
+**GROUP BY = make groups**
+
+You do **not** need `GROUP BY` simply because you are using `SELECT`.
+
+For example:
+
+```sql
+SELECT employee_id
+FROM Employees
+WHERE salary < 30000
+ORDER BY employee_id;
+```
+
+There is no grouping here, so `GROUP BY` is unnecessary.
+
+---
+
+### 3. HAVING — Filter Groups
+
+Use `HAVING` when you want to filter the groups created by `GROUP BY`.
+
+```sql
+SELECT DeptID, COUNT(*) AS EmployeeCount
+FROM Employee
+GROUP BY DeptID
+HAVING COUNT(*) >= 3;
+```
+
+This asks:
+
+> "Which departments have at least 3 employees?"
+
+The important distinction is:
+
+```text
+WHERE  → filters rows
+HAVING → filters groups
+```
+
+You cannot normally use an aggregate condition such as:
+
+```sql
+WHERE COUNT(*) >= 3
+```
+
+because `COUNT(*)` is calculated after the rows have been grouped.
+
+Instead use:
+
+```sql
+HAVING COUNT(*) >= 3
+```
+
+Think:
+
+**HAVING = filter groups**
+
+---
+
+### 4. ORDER BY — Sort the Result
+
+Use `ORDER BY` when you want to control the order in which the results are displayed.
+
+```sql
+SELECT employee_id, salary
+FROM Employees
+ORDER BY salary DESC;
+```
+
+This does not remove or combine any rows. It simply sorts them from highest salary to lowest salary.
+
+```sql
+ORDER BY salary ASC;
+```
+
+→ lowest to highest
+
+```sql
+ORDER BY salary DESC;
+```
+
+→ highest to lowest
+
+Think:
+
+**ORDER BY = sort**
+
+---
+
+### WHERE vs HAVING
+
+This is the most important distinction to remember.
+
+#### WHERE talks about an individual row
+
+```sql
+WHERE salary > 50000
+```
+
+Meaning:
+
+> "Is this employee's salary greater than 50,000?"
+
+#### HAVING talks about a group
+
+```sql
+HAVING COUNT(*) > 5
+```
+
+Meaning:
+
+> "Does this department/group contain more than 5 employees?"
+
+---
+
+### All Four Together
+
+Example:
+
+> Find departments that have at least 3 employees earning at least $30,000, and display the departments with the highest average salary first.
+
+```sql
+SELECT DeptID, AVG(Salary) AS AvgSalary
+FROM Employee
+WHERE Salary >= 30000
+GROUP BY DeptID
+HAVING COUNT(*) >= 3
+ORDER BY AvgSalary DESC;
+```
+
+Read it step by step:
+
+```text
+WHERE
+→ Keep only employees earning at least $30,000.
+
+GROUP BY
+→ Put those employees into groups based on DeptID.
+
+HAVING
+→ Keep only departments containing at least 3 employees.
+
+ORDER BY
+→ Sort the remaining departments by average salary, highest first.
+```
+
+### The 4-Question Trick
+
+Whenever you are confused, ask yourself:
+
+```text
+1. Am I filtering individual rows?
+   → WHERE
+
+2. Am I putting similar rows together?
+   → GROUP BY
+
+3. Am I filtering the groups?
+   → HAVING
+
+4. Am I only changing the order?
+   → ORDER BY
+```
+
+### Easy Memory Trick
+
+```text
+WHERE     → FILTER ROWS
+GROUP BY  → MAKE GROUPS
+HAVING    → FILTER GROUPS
+ORDER BY  → SORT
+```
+
+---
+
+## Practice Questions
+
+Use the following `Employees` table:
+
+```text
++-------------+-----------+------------+--------+
+| employee_id | name      | department | salary |
++-------------+-----------+------------+--------+
+| 1           | Alice     | IT         | 60000  |
+| 2           | Bob       | IT         | 40000  |
+| 3           | Charlie   | HR         | 35000  |
+| 4           | David     | HR         | 25000  |
+| 5           | Eva       | Sales      | 50000  |
+| 6           | Frank     | Sales      | 30000  |
+| 7           | Grace     | Sales      | 25000  |
+| 8           | Henry     | IT         | 70000  |
++-------------+-----------+------------+--------+
+```
+
+### Practice 1 — WHERE
+
+Return the `name` and `salary` of employees whose salary is greater than `$40,000`.
+
+**Question to ask:** Am I filtering individual employees or creating groups?
+
+---
+
+### Practice 2 — ORDER BY
+
+Return all employees, sorted by salary from highest to lowest.
+
+**Question to ask:** Am I filtering or grouping anything, or do I only need to change the order?
+
+---
+
+### Practice 3 — GROUP BY
+
+Find the number of employees in each department.
+
+Expected result:
+
+```text
+department | employee_count
+-----------+---------------
+HR         | ?
+IT         | ?
+Sales      | ?
+```
+
+**Question to ask:** Do I want one result for each department?
+
+---
+
+### Practice 4 — HAVING
+
+Find the departments that have at least 3 employees.
+
+Expected result:
+
+```text
+department | employee_count
+-----------+---------------
+IT         | 3
+Sales      | 3
+```
+
+**Question to ask:** Am I filtering individual employees or filtering groups?
+
+---
+
+### Practice 5 — WHERE + GROUP BY + HAVING + ORDER BY
+
+Find departments whose average salary is greater than `$40,000`, considering only employees whose salary is at least `$30,000`.
+
+Return the department and average salary, ordered by average salary from highest to lowest.
+
+Before writing the query, identify what each clause should do:
+
+```text
+WHERE     → ?
+GROUP BY  → ?
+HAVING    → ?
+ORDER BY  → ?
+```
+
+### Final Cheat Sheet
+
+| Clause     | Main job               | Think              |
+| ---------- | ---------------------- | ------------------ |
+| `WHERE`    | Filter individual rows | **Which rows?**    |
+| `GROUP BY` | Create groups          | **Group by what?** |
+| `HAVING`   | Filter groups          | **Which groups?**  |
+| `ORDER BY` | Sort results           | **What order?**    |
+
 ## Views
 
 A virtual table based on the result of a stored SQL query. Views do not store data themselves (in most cases) but simplify complex queries and add a layer of abstraction and security.
