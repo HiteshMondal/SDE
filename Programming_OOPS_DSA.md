@@ -503,6 +503,49 @@ d.update({"c": 3})                # add/update key
 d.pop("a")                          # remove key, return value
 d.setdefault("d", 10)                 # set if not exists
 
+# Updating elements
+d["b"] = 20               # update existing key directly
+d["e"] = 5                   # adding a new key directly (same syntax as update)
+
+# Checking keys
+"b" in d                  # True  -> checks keys only
+"z" in d                     # False
+"z" not in d                    # True
+
+# Length
+len(d)                    # number of key-value pairs
+
+# Nested hashmaps
+nested = {
+    "user1": {"name": "Alice", "age": 25},
+    "user2": {"name": "Bob", "age": 30}
+}
+
+nested["user1"]["name"]        # "Alice"
+nested["user2"]["age"] = 31       # update nested value
+nested["user3"] = {"name": "Cara", "age": 22}   # add new nested entry
+
+for user_id, info in nested.items():
+    print(user_id, info["name"], info["age"])
+
+# Hash collisions
+# Python dicts use hashing internally to store keys.
+# Two different keys can (rarely) produce the same hash bucket internally,
+# but Python handles this automatically -> you never manage collisions manually.
+# You just need keys to be hashable (see below); Python's dict implementation
+# resolves any internal collision transparently.
+
+# Valid dict keys
+# A key must be hashable (immutable types): str, int, float, bool, tuple (if its contents are also hashable)
+valid = {
+    "name": "Alice",      # str key
+    1: "one",                # int key
+    (1, 2): "point"             # tuple key (valid, since tuple is immutable)
+}
+
+# invalid = {[1,2]: "value"}   # TypeError: list is unhashable (mutable)
+# invalid = {{1,2}: "value"}      # TypeError: set is unhashable (mutable)
+
 # Dict comprehension
 squares = {x: x*x for x in range(5)}
 ```
@@ -2658,6 +2701,22 @@ from collections import Counter
 
 def frequency_count(nums):
     return Counter(nums)
+```
+
+```python
+nums = [2,5,7,2,4,9,1,9,1]
+freq = {}
+
+'''
+for i in nums:
+  if i in freq: freq[i] += 1
+  else: freq[i] = 1
+'''
+for i in nums:
+    freq[i] = freq.get(i, 0) + 1  # dictionary.get(key, default_value)
+
+print(freq)        # {2: 2, 5: 1, 7: 1, 4: 1, 9: 2, 1: 2}
+print(len(freq))   # 6
 ```
 
 ### Two Sum
