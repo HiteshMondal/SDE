@@ -4435,20 +4435,47 @@ trap cleanup EXIT          # Signal handling
 Q. A developer created a testing program that is continuously writing to a log file /var/log/bad.log and filling up the disk. You can check for example with tail -f /var/log/bad.log.
 This program is no longer needed. Find it and terminate it. Do not delete the log file.
 
-
 ```bash
 sudo kill 1234
 sudo lsof /var/log/bad.log
 sudo fuser /var/log/bad.log
 tail -f /var/log/bad.log
-
 ```
 
 Q. Description: There's a web server access log file at /home/admin/access.log. The file consists of one line per HTTP request, with the requester's IP address at the beginning of each line (first column).
 Findwhat's the IP address that has the most requests in this file (there's no tie; the IP is unique). Write the solution into a file /home/admin/highestip.txt. For example, if your solution is "1.2.3.4", you can do echo "1.2.3.4" > /home/admin/highestip.txt
+
 ```bash
 awk '{print $1}' /home/admin/access.log | sort | uniq -c | sort -nr | head -1 | awk '{print $2}' > /home/admin/highestip.txt
 ```
 
+Q. Description: There's a file /home/admin/scores.txt with two columns (the first number is a line number and the second one is a test score for example).
+Find the average (more precisely; the arithmetic mean: sum of numbers divided by how many numbers are there) of the numbers in the second column (find the average score).
+Use exactly two digits to the right of the decimal point. i. e., use exactly two "decimal digits" without any rounding. E.g.: if average = 21.349 , the solution is 21.34. If average = 33.1 , the solution is 33.10.
+Save the solution in the /home/admin/solution file, for example: echo "123.45" > ~/solution
+
+Tip: There's bc, Python3, Golang and sqlite3 installed in this VM.
+Test: md5sum /home/admin/solution returns 6d4832eb963012f6d8a71a60fac77168
+
+```bash
+vi python.py
+```
+```python
+numbers = []
+
+with open("/home/admin/scores.txt") as file:
+    for line in file:
+        parts = line.split()
+        score = float(parts[1])
+        numbers.append(score)
+
+average = sum(numbers) / len(numbers)
+average = int(average * 100) / 100
+
+print(f"{average:.2f}")
+```
+```bash
+python3 /home/user/python.py > /home/user/solution ; md5sum /home/user/solution
+```
 
 *This document covers Linux Commands and Shell Scripting from beginner to DevOps-level. Practice these concepts hands-on for best results.*
