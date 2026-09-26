@@ -211,6 +211,62 @@ The intentional process of introducing redundancy into a normalized database to 
 
 # Structured Query Language (SQL)
 
+## SQL Data Types
+
+| **Data Type**            | **Used For**          | **Example**               |
+| ------------------------ | --------------------- | ------------------------- |
+| `INT`                    | Whole numbers         | `25`                      |
+| `DECIMAL`                | Exact decimal numbers | `99.50`                   |
+| `CHAR(n)`                | Fixed-length text     | `'ABC'`                   |
+| `VARCHAR(n)`             | Variable-length text  | `'John'`                  |
+| `DATE`                   | Date                  | `'2026-09-15'`            |
+| `TIME`                   | Time                  | `'12:30:00'`              |
+| `DATETIME` / `TIMESTAMP` | Date + time           | `'2026-09-15 12:30:00'`   |
+| `BOOLEAN`                | True/False            | `TRUE`                    |
+| `TEXT`                   | Large text            | `'A long description...'` |
+
+**Numeric:** `INT`, `DECIMAL`, `FLOAT`
+**String:** `CHAR`, `VARCHAR`, `TEXT`
+**Date & Time:** `DATE`, `TIME`, `DATETIME`
+**Boolean:** `BOOLEAN`
+**Binary:** `BLOB` (images/files, etc.)
+
+### Example
+
+```sql
+CREATE TABLE Student (
+    id INT,
+    name VARCHAR(50),
+    marks DECIMAL(5,2),
+    birth_date DATE,
+    active BOOLEAN
+);
+```
+
+## NULL and Comparisons
+
+`NULL` represents a missing or unknown value. It cannot be compared using `=` or `<>`.
+
+Wrong:
+
+```sql
+WHERE salary = NULL
+```
+
+Correct:
+
+```sql
+WHERE salary IS NULL
+```
+
+To find values that are not NULL:
+
+```sql
+WHERE salary IS NOT NULL
+```
+
+**Remember:** `NULL` is not equal to anything, so use `IS NULL` and `IS NOT NULL` instead of `= NULL` or `<> NULL`.
+
 ## Categories of SQL Commands
 
 ### DDL (Data Definition Language)
@@ -429,6 +485,23 @@ FROM Employee
 GROUP BY DeptID
 HAVING AVG(Salary) > 50000;
 ```
+
+### ROUND with AVG
+
+`ROUND(number, 2)` rounds a number to 2 decimal places.
+
+```sql
+ROUND(AVG(number), 2)
+```
+
+Example:
+
+```sql
+SELECT ROUND(AVG(Salary), 2) AS AvgSalary
+FROM Employee;
+```
+
+This calculates the average salary and rounds the result to 2 decimal places.
 
 **Pattern to solve Aggregate questions:** `WHERE` filters rows *before* grouping; `HAVING` filters groups *after* aggregation. If the condition involves an aggregate function (`COUNT`, `AVG`, `SUM`, etc.), it must go in `HAVING`, never `WHERE`.
 
@@ -675,6 +748,104 @@ GROUP BY  → MAKE GROUPS
 HAVING    → FILTER GROUPS
 ORDER BY  → SORT
 ```
+
+---
+
+## LIKE and Wildcards
+
+`LIKE` is used to search for a pattern in a string.
+
+`%` means **zero or more characters**.
+
+Examples:
+
+```sql
+SELECT * FROM Employee
+WHERE Name LIKE 'A%';
+```
+
+→ Names starting with `A`
+
+```sql
+SELECT * FROM Employee
+WHERE Name LIKE '%a';
+```
+
+→ Names ending with `a`
+
+```sql
+SELECT * FROM Employee
+WHERE Name LIKE '%an%';
+```
+
+→ Names containing `an`
+
+**Remember:** `%` can match zero, one, or many characters.
+
+---
+
+## REGEX and REGEXP_LIKE
+
+`REGEXP_LIKE` is used to check whether a string matches a regular-expression pattern.
+
+Example:
+
+```sql
+REGEXP_LIKE(email, '^[A-Za-z][A-Za-z0-9_.-]*@gmail[.]com$')
+```
+
+| **Pattern**       | **Meaning**                        |
+| ----------------- | ---------------------------------- |
+| `[A-Za-z]`        | One letter, uppercase or lowercase |
+| `[A-Za-z0-9_.-]*` | Zero or more allowed characters    |
+| `^`               | Start of the string                |
+| `@gmail[.]com`    | Exactly `@gmail.com`               |
+| `$`               | End of the string                  |
+
+Example:
+
+```sql
+SELECT *
+FROM Student
+WHERE REGEXP_LIKE(email, '^[A-Za-z][A-Za-z0-9_.-]*@gmail[.]com$');
+```
+
+---
+
+## String Functions
+
+### SUBSTR
+
+```sql
+SUBSTR(A, index, length)
+```
+
+`SUBSTR(name, 1, 1)` extracts the first character.
+
+`SUBSTR(name, 2)` gets the rest of the name.
+
+### UPPER
+
+`UPPER(...)` converts text to uppercase.
+
+### LOWER
+
+`LOWER(...)` converts text to lowercase.
+
+### CONCAT
+
+`CONCAT(...)` combines two or more strings.
+
+Example:
+
+```sql
+CONCAT(
+    UPPER(SUBSTR(name, 1, 1)),
+    LOWER(SUBSTR(name, 2))
+)
+```
+
+This converts a name so that the first character is uppercase and the remaining characters are lowercase.
 
 ---
 
