@@ -72,6 +72,31 @@ int("101", 2)                            # 5   (binary string -> int, base=2)
 int("ff", 16)                              # 255 (hex string -> int, base=16)
 ```
 
+## F-strings
+
+F-strings (formatted string literals), introduced in Python 3.6, are the modern, standard, and most efficient way to format strings in Python. They are faster and more readable than older formatting methods like % formatting or .format().
+
+```python
+name = "Alice"
+age = 30
+
+# Basic variable insertion
+print(f"My name is {name} and I am {age} years old.")
+# Output: My name is Alice and I am 30 years old.
+
+# Math operations and string methods inside braces
+print(f"Next year, you will be {age + 1}. Your name in uppercase is {name.upper()}.")
+# Output: Next year, you will be 31. Your name in uppercase is ALICE.
+```
+
+| Formatting Goal | Syntax | Example | Output |
+| :--- | :--- | :--- | :--- |
+| **Float Precision** | `:.Nf` | `f"{3.14159:.2f}"` | `3.14` |
+| **Thousands Separator** | `:,` | `f"{1000000:,}"` | `1,000,000` |
+| **Percentage** | `:.N%` | `f"{0.75:.1%}"` | `75.0%` |
+| **Zero Padding** | `:0N` | `f"{7:03}"` | `007` |
+| **String Padding/Width** | `:N` | `f"{'hi':5}!"` | `'hi   !'` |
+
 ## bool → other types
 
 ```python
@@ -1940,6 +1965,69 @@ def longest_unique_substring(s):
         result = max(result, right - left + 1)
 
     return result
+```
+
+### Maximum Length Substring
+
+```python
+def maximumLengthSubstring(self, s: str) -> int:
+    maximum = 0
+
+    left = 0
+    freq = {}
+
+    for right in range(0, len(s)):
+        freq[s[right]] = freq.get(s[right], 0) + 1
+        
+        # if freq[s[right]] > 2: is wrong Because it removes only one character
+        while freq[s[right]] > 2:
+            freq[s[left]] -= 1
+            left += 1
+
+        maximum = max(maximum, right - left + 1)
+
+    return maximum
+```
+
+### Minimum Difference
+
+```python
+def minimumDifference(self, nums: List[int], k: int) -> int:
+    minimum = float('inf')
+
+    if len(nums) <= 1:
+        return 0
+
+    nums.sort()
+
+    for i in range(0, len(nums)-k+1):
+        # nums[i:k] is list not integer
+        difference = nums[i+k-1] - nums[i]
+
+        minimum = min(minimum, difference) 
+
+    return minimum
+```
+
+### Minimum Required
+
+```python
+def minimumRecolors(self, nums: str, k: int) -> int:
+   minimum = float('inf')
+
+
+   # Iterate through the string with a sliding window of size k
+   for right in range(0, len(nums) - k + 1):
+       count = 0
+       # Count the number in the current window
+       for i in range(right, right+k):
+           if nums[i] == 'match':
+               count += 1
+
+
+       minimum = min(minimum, count)
+      
+   return minimum
 ```
 
 ### Frequency-Based Window
