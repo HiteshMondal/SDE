@@ -1064,6 +1064,8 @@ print(server.info())
 
 ## Inheritance
 
+Inheritance is a core concept in Object-Oriented Programming (OOP) that allows a new class (child/subclass) to acquire the properties, attributes, and behaviors (methods) of an existing class (parent/superclass). It models an "IS-A" relationship between classes—for example, a Car is a Vehicle.
+
 ```python
 class Vehicle:
     def __init__(self, brand):
@@ -1252,6 +1254,8 @@ print(scale_resource("api-gateway"))     # Scaling service: api-gateway
 
 ## Polymorphism
 
+Polymorphism in Object-Oriented Programming (OOP) means "many forms," allowing a single function, method, or operator to behave differently depending on the object or context it is used with
+
 ```python
 class Cat:
     def speak(self):
@@ -1285,6 +1289,8 @@ for deployer in [AWSDeployer(), AzureDeployer(), GCPDeployer()]:
 ```
 
 ## Encapsulation
+
+Encapsulation is a core principle of object-oriented programming (OOP) that bundles data (attributes) and the methods (functions) that operate on that data into a single unit, usually known as a class. It acts as a protective shield that prevents external code from directly accessing or modifying the internal state of an object.
 
 ```python
 class BankAccount:
@@ -1374,6 +1380,8 @@ print(server.instance_size)      # large
 ```
 
 ## Abstraction
+
+Abstraction in Object-Oriented Programming (OOP) is the process of hiding internal implementation details and showing only essential features to the user. It focuses on what an object does rather than how it does it.
 
 ```python
 from abc import ABC, abstractmethod
@@ -1755,7 +1763,7 @@ print(["Fizz"*(i%3==0)+"Buzz"*(i%5==0) or str(i) for i in range(1,16)])
 
 ---
 
-# Coding Patterns (Problem-Solving Templates)
+# Data Structures and Algorithms with Coding Patterns (Problem-Solving Templates)
 
 ## Two Pointers
 
@@ -2950,7 +2958,66 @@ def can_attend_meetings(intervals):
     return True
 ```
 
-## Linked List Manipulation
+## Linked List
+
+A linked list is a linear data structure where elements are not stored in contiguous memory locations. Instead, each element is an independent object called a Node. Every node contains two parts: the data (the value being stored) and a pointer/reference to the next node in the sequence.
+
+```python
+class Node:
+    """A single node in a linked list."""
+    def __init__(self, data):
+        self.data = data  # Stores the value
+        self.next = None  # Points to the next node (initially None)
+
+
+class LinkedList:
+    """The linked list wrapper class."""
+    def __init__(self):
+        self.head = None  # The start of the list is initially empty
+
+    def append(self, data):
+        """Adds a new node to the end of the list."""
+        new_node = Node(data)
+        
+        # If the list is empty, make the new node the head
+        if not self.head:
+            self.head = new_node
+            return
+            
+        # Otherwise, traverse to the last node
+        current = self.head
+        while current.next:
+            current = current.next
+            
+        # Link the last node to the new node
+        current.next = new_node
+
+    def display(self):
+        """Prints the entire linked list."""
+        current = self.head
+        elements = []
+        
+        while current:
+            elements.append(str(current.data))
+            current = current.next
+            
+        print(" -> ".join(elements) + " -> None")
+
+
+# --- How to use it ---
+if __name__ == "__main__":
+    # Create a new Linked List
+    my_list = LinkedList()
+
+    # Append data
+    my_list.append(10)
+    my_list.append(20)
+    my_list.append(30)
+
+    # Display the list
+    # Output: 10 -> 20 -> 30 -> None
+    my_list.display()
+```
 
 ### Reverse Linked List
 
@@ -3251,7 +3318,7 @@ def dijkstra(graph, start):
     return distances
 ```
 
-## Trie
+## Trie / Prefix tree
 
 ```python
 class TrieNode:
