@@ -60,6 +60,70 @@ Before containers, "it works on my machine" was a real problem — an app might 
 | `docker info` | Daemon-wide state: storage driver, containers running, root dir 
 | `docker commit <container> newimage:tag` | Create a new image from a container's current state — technically works but is considered an anti-pattern because it's not reproducible (no Dockerfile records *how* the image was made). Use it only for quick debugging snapshots, never for real builds. |
 
+### Docker Command Flags (`-i`, `-t`, `-d`, and others) and the Dot (`.`)
+
+A **flag/option** changes how a Docker command behaves. A flag usually starts with `-` (short form) or `--` (long form). The meaning depends on the specific command—**there is no rule that any letter after `-` will work**. Use `docker <command> --help` to see the options supported by that command.
+
+#### Common flags
+
+| Flag | Meaning | Example |
+|---|---|---|
+| `-i` | Keep standard input open, even if not attached | `docker run -i ubuntu` |
+| `-t` | Allocate a pseudo-terminal (TTY) | `docker run -t ubuntu` |
+| `-it` | Combine `-i` and `-t`; useful for an interactive shell | `docker run -it ubuntu bash` |
+| `-d` | Detached mode: run in the background and return control to the terminal | `docker run -d nginx` |
+| `-p` | Publish a host port to a container port (`HOST:CONTAINER`) | `docker run -p 8080:80 nginx` |
+| `-v` | Mount a named volume or host path into the container | `docker run -v mydata:/data ubuntu` |
+| `-e` | Set an environment variable inside the container | `docker run -e APP_ENV=dev myimage` |
+| `-a` | Attach to a specified stream in commands that support it; in `docker ps -a`, show all containers, including stopped ones | `docker ps -a` |
+| `-f` | Meaning depends on the command: for example, follow log output with `docker logs -f` | `docker logs -f mycontainer` |
+| `-q` | Quiet output; often prints IDs only | `docker ps -q` |
+| `--name` | Assign a name to a container | `docker run --name web nginx` |
+| `--rm` | Automatically remove the container when it exits | `docker run --rm ubuntu echo hello` |
+
+**Short flags can sometimes be combined.** For example, `-it` is shorthand for `-i -t`. This works only when the command supports those options. Long flags usually use two hyphens, such as `--name`, `--rm`, and `--publish`.
+
+#### What does the dot (`.`) at the end of a Docker command mean?
+
+In a command such as:
+
+```bash
+docker build -t myapp .
+```
+
+The final `.` means **the current directory is the build context**. Docker uses files in that directory (subject to `.dockerignore`) when processing `COPY` and `ADD` instructions in the Dockerfile. The dot is not a Docker flag; it is a path.
+
+- `.` = current directory
+- `..` = parent directory
+- `./app` = the `app` directory inside the current directory
+
+For example, if you are in the directory containing `Dockerfile` and your application files, run:
+
+```bash
+docker build -t myapp .
+```
+
+To use a different directory as the build context, provide that path instead:
+
+```bash
+docker build -t myapp ./app
+```
+
+Here, `./app` is the build context. By default, Docker looks for a file named `Dockerfile` in the selected context; use `-f` to specify a different Dockerfile path, for example `docker build -f docker/Dockerfile -t myapp .`.
+
+**Do not confuse the dot with `COPY` syntax.** In a Dockerfile, `COPY . .` means “copy everything from the build context into the current working directory inside the image.” The first dot is the source on the host/build context; the second dot is the destination inside the image (usually the directory set by `WORKDIR`).
+
+#### Quick memory tips
+
+- `-it`: interact with a container through a terminal.
+- `-d`: run a container in the background.
+- `-p 8080:80`: host port `8080` forwards to container port `80`.
+- `-v mydata:/data`: mount volume `mydata` at `/data` in the container.
+- Final `.` in `docker build -t myapp .`: use the current directory as the build context.
+- A letter is **not automatically a valid flag**. Check with `docker run --help`, `docker build --help`, or `docker ps --help`, depending on the command.
+
+---
+
 ### `-d` vs `-it` (a very common beginner confusion)
 
 - `-d` (detached): container runs in the background, terminal returns immediately. Used for services (web servers, databases).

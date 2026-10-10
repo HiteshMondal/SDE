@@ -763,6 +763,37 @@ v           → Open the current file in an editor
 | Large log files      | Yes                       | Yes    |
 | Common modern choice | Less common               | `less` |
 
+### emacs — Text Editor
+
+`emacs` is a powerful text editor that can be used in the terminal or with a graphical interface. It can create, edit, search, and save files.
+
+```bash
+emacs file.txt              # Open or create a file
+emacs -nw file.txt           # Open Emacs inside the terminal
+emacs -Q                    # Start without loading personal configuration
+```
+
+**Basic shortcuts in Emacs**
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl+X`, then `Ctrl+S` | Save file |
+| `Ctrl+X`, then `Ctrl+C` | Exit Emacs |
+| `Ctrl+X`, then `Ctrl+F` | Open a file |
+| `Ctrl+K` | Cut text from cursor to end of line |
+| `Ctrl+Y` | Paste (yank) text |
+| `Ctrl+S` | Search forward |
+| `Ctrl+G` | Cancel the current command |
+
+**Install Emacs on Ubuntu/Debian**
+
+```bash
+sudo apt update
+sudo apt install emacs
+```
+
+> Unlike `nano`, Emacs uses key combinations and has a more extensive editing and customization environment. In terminal mode, `Ctrl+X` and `Ctrl+C` are pressed sequentially, not simultaneously.
+
 ### diff — Compare Files
 
 `diff` compares two files and shows the differences between them. It is commonly used to compare configuration files, source code, backups, or old and new versions of a file.
@@ -1153,6 +1184,8 @@ chmod 1777 /tmp                # Sticky + rwxrwxrwx
 
 ---
 
+---
+
 ## Users, Groups & Access
 
 ### What Is Root?
@@ -1291,7 +1324,6 @@ group_members     # Users who belong to the group
 | `/etc/group`   | Group names, GIDs, and group members                           |
 | `/etc/gshadow` | Protected group passwords and group administration information |
 
-
 ### /etc/services & /etc/nsswitch.conf
 
 ```text
@@ -1371,6 +1403,8 @@ vi sshkey.private
 chmod 600 sshkey.private
 ssh -i sshkey.private -p port_number username@hostname
 ```
+
+---
 
 ---
 
@@ -2022,6 +2056,95 @@ rsync -av --delete source/ destination/
 
 > Use `scp` for a simple one-time copy. Use `rsync` when repeatedly synchronizing directories or creating backups.
 
+### Apache HTTP Server — `httpd` and `httpd.conf`
+
+Apache HTTP Server is web-server software that serves web pages over HTTP and HTTPS.
+
+- `httpd` — the Apache server executable name commonly used on RHEL, CentOS, and Fedora.
+- `apache2` — the usual service and executable naming on Ubuntu/Debian.
+- `httpd.conf` — a main Apache configuration filename commonly used on RHEL-based distributions. Ubuntu/Debian typically uses `/etc/apache2/apache2.conf` and additional files under `/etc/apache2/`.
+
+**1. Install Apache**
+
+Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install apache2
+```
+
+RHEL/Fedora-family systems:
+
+```bash
+sudo dnf install httpd
+```
+
+**2. Start and enable the service**
+
+Ubuntu/Debian:
+
+```bash
+sudo systemctl enable --now apache2
+sudo systemctl status apache2
+```
+
+RHEL-based systems:
+
+```bash
+sudo systemctl enable --now httpd
+sudo systemctl status httpd
+```
+
+**3. Locate and inspect the configuration**
+
+```bash
+# Ubuntu/Debian
+sudo nano /etc/apache2/apache2.conf
+
+# RHEL-based systems
+sudo nano /etc/httpd/conf/httpd.conf
+```
+
+Always check which distribution and configuration layout you are using before editing files.
+
+**4. Create a simple web page**
+
+```bash
+# Ubuntu/Debian
+echo '<h1>Hello from Apache</h1>' | \
+sudo tee /var/www/html/index.html
+```
+
+On a default Ubuntu/Debian installation, `/var/www/html/` is the standard document root.
+
+**5. Test the server**
+
+```bash
+curl -I http://localhost
+sudo apache2ctl configtest    # Ubuntu/Debian
+sudo httpd -t                 # RHEL-based systems
+```
+
+Open `http://localhost` in a browser on the server, or use the server's reachable IP address from another machine. Remote access may require firewall rules and network configuration.
+
+**6. Apply configuration changes**
+
+Ubuntu/Debian:
+
+```bash
+sudo apache2ctl configtest && sudo systemctl reload apache2
+```
+
+RHEL-based systems:
+
+```bash
+sudo httpd -t && sudo systemctl reload httpd
+```
+
+> `httpd.conf` is a configuration file, not a command. Make a backup before editing, test the configuration, and only reload the service after the test succeeds. HTTPS additionally requires TLS configuration and a certificate.
+
+---
+
 ---
 
 ## Archives & Compression
@@ -2100,7 +2223,67 @@ file data
 
 ---
 
+---
+
 ## Package Management
+
+### `apt` vs `apt-get` — What Do They Mean?
+
+Both `apt` and `apt-get` manage software packages on Debian-based Linux distributions such as Ubuntu. They download package information, install software, and handle dependencies.
+
+**1. `sudo apt-get update` vs `sudo apt update`**
+
+```bash
+sudo apt-get update
+sudo apt update
+```
+
+- `sudo` — runs the command with administrative privileges.
+- `apt` / `apt-get` — package management commands.
+- `update` — refreshes the local package index from configured repositories. It does not upgrade installed packages.
+
+Both commands serve essentially the same purpose. `apt` is generally preferred for interactive use, while `apt-get` is often used in scripts because its interface is more stable.
+
+**2. `sudo apt install something` vs `sudo apt-get install something`**
+
+```bash
+sudo apt install tree
+sudo apt-get install tree
+```
+
+Both install the requested package (`tree` in this example), along with required dependencies.
+
+- `install` — the operation to perform.
+- `tree` — the package name; replace it with the software you need.
+
+**3. What does `&&` mean?**
+
+```bash
+sudo apt-get update && sudo apt update
+```
+
+The second command runs only if the first succeeds. In this example, both commands refresh package indexes, so running them consecutively is usually redundant.
+
+A more practical example is:
+
+```bash
+sudo apt update && sudo apt install tree
+```
+
+This refreshes the package index and installs `tree` only if the update succeeds.
+
+**Remember:**
+
+| Command | Purpose |
+|---|---|
+| `apt update` | Refresh package indexes |
+| `apt upgrade` | Upgrade installed packages |
+| `apt install package` | Install a package |
+| `apt remove package` | Remove a package |
+| `apt-get update` | Refresh package indexes using the traditional interface |
+| `apt-get install package` | Install a package using the traditional interface |
+
+> `apt update` does not mean updating the entire operating system. Use `apt upgrade` to upgrade installed packages.
 
 `apt` and `yum`/`dnf` install, update, and remove software on Linux.
 
@@ -2132,6 +2315,8 @@ yum search nginx              # Search packages
 yum info nginx                # Package details
 dnf install nginx             # dnf is modern replacement for yum
 ```
+
+---
 
 ---
 
@@ -2175,6 +2360,8 @@ UUID=xxxx-xxxx  none            swap       sw              0       0
 ```
 - `dump`: 1 = back up with `dump` utility, 0 = skip
 - `pass`: order `fsck` checks filesystems at boot; `0` = don't check, `1` = root first
+
+---
 
 ---
 
@@ -2325,6 +2512,8 @@ ulimit -Sn                   # show the soft limit (current enforced value)
 
 ---
 
+---
+
 ## Process Management
 
 ### ps vs top
@@ -2444,6 +2633,8 @@ killall nginx          # kill all processes with exact name match
 
 ---
 
+---
+
 ## Scheduling (cron & at)
 
 | Feature | `cron` | `at` |
@@ -2496,6 +2687,8 @@ at> <Ctrl+D>
 atq    # List pending at jobs
 atrm 3 # Remove job number 3
 ```
+
+---
 
 ---
 
@@ -2607,6 +2800,8 @@ journalctl -u nginx -f
 
 ---
 
+---
+
 ## Links (Soft vs Hard)
 
 ### What Is an Inode?
@@ -2692,6 +2887,8 @@ A symlink stores a **path string**, not a reference to the file itself — movin
 
 ---
 
+---
+
 ## SELinux
 
 Security-Enhanced Linux (SELinux) is a mandatory access control (MAC) security framework built into the Linux kernel — primarily used in RHEL/CentOS systems.
@@ -2722,6 +2919,8 @@ restorecon -Rv /var/www/html/
 # View SELinux denials in audit log
 grep "denied" /var/log/audit/audit.log
 ```
+
+---
 
 ---
 
@@ -2761,6 +2960,8 @@ echo "eyJuYW1lIjoiQWxpY2UifQ==" | base64 -d
 
 ---
 
+---
+
 ## Hashing
 
 ```bash
@@ -2770,6 +2971,68 @@ md5sum test.txt
 
 echo "hello" | md5sum    # Hashing text
 ```
+
+---
+
+---
+
+## Sending Email from the Linux Terminal
+
+Linux can send email from the command line using mail utilities such as `mail` or `mailx`. A configured mail transfer agent (MTA) or external SMTP service is usually required.
+
+**Install a mail utility**
+
+```bash
+sudo apt update
+sudo apt install mailutils
+```
+
+**Send a simple email**
+
+```bash
+echo "This is a test email." | mail -s "Test Email" user@example.com
+```
+
+- `echo` — provides the email body.
+- `|` — passes the text to the next command.
+- `mail` — sends an email using the configured mail system.
+- `-s` — specifies the subject.
+- `user@example.com` — recipient address; replace it with the actual recipient.
+
+**Send an email with multiple lines**
+
+```bash
+mail -s "Server Report" admin@example.com <<EOF
+Hello Admin,
+
+The server report is ready.
+Please check the system logs.
+
+Regards,
+Linux Server
+EOF
+```
+
+**Send a file as an attachment**
+
+```bash
+echo "Please find the report attached." | \
+mail -s "Daily Report" -A report.txt admin@example.com
+```
+
+The `-A` option is supported by certain mail implementations, including common `mailutils` versions. Check `man mail` on your system for the available options.
+
+**Troubleshooting**
+
+```bash
+mailq                         # Check queued messages (if supported)
+sudo journalctl -u postfix    # Check Postfix service logs
+```
+
+> Installing `mailutils` alone does not guarantee delivery. Configure an MTA such as Postfix or an authorized SMTP relay, and check the logs if messages fail to arrive. Use a real recipient address and never include passwords or other secrets in test emails.
+
+---
+
 ---
 
 ## Shell Scripting Basics
@@ -3456,6 +3719,8 @@ echo "[DEBUG] About to run: $command"
 
 ---
 
+---
+
 ## Advanced Shell Scripting
 
 ### Subshell `( )` vs Grouping `{ }`
@@ -3878,6 +4143,8 @@ set -e    # Turn it back on
 
 ---
 
+---
+
 ## I/O Redirection & Pipelines
 
 Linux programs use three standard streams:
@@ -4083,6 +4350,8 @@ cat <(echo "a") <(echo "b")
 
 ---
 
+---
+
 ## Linux Directory Structure
 
 The Linux filesystem follows the Filesystem Hierarchy Standard (FHS), which standardizes directory structure across all distributions.
@@ -4139,6 +4408,8 @@ cat /etc/hosts
 | `/opt` | Optional software | `/opt/google/chrome`, `/opt/docker/` |
 | `/mnt` | Manual mounts | `mount /dev/sdb1 /mnt` |
 | `/media` | Auto-mounted media | `/media/usb`, `/media/cdrom` |
+
+---
 
 ---
 

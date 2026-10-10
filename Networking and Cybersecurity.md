@@ -967,6 +967,66 @@ The largest packet size (in bytes) that can be transmitted over a network segmen
 5. TLD refers to authoritative name server
 6. Authoritative server returns the IP address
 
+#### Robots.txt
+
+**What is robots.txt?**
+
+`robots.txt` is a text file on a website that tells search engine crawlers which pages they should or should not access.
+
+**Example:**
+```text
+User-agent: *
+Disallow: /admin/
+Disallow: /private/
+Allow: /
+Sitemap: https://example.com/sitemap.xml
+```
+
+**Key Directives:**
+- `User-agent`: Specifies which crawler the rule applies to.
+- `Disallow`: Tells crawlers not to access a path.
+- `Allow`: Permits crawlers to access a path.
+- `Sitemap`: Provides the location of the sitemap.
+
+**Cybersecurity Note:**
+- Anyone can view `robots.txt`.
+- It is **not a security mechanism**.
+- Malicious bots can ignore its rules.
+- Protect sensitive pages using authentication and access controls.
+
+**Useful Commands:**
+```bash
+curl https://example.com/robots.txt
+```
+##### How to Create and Manage robots.txt
+
+**1. Create the file**
+- Create a plain-text file named `robots.txt`.
+- Add crawler rules, for example:
+
+```text
+User-agent: *
+Disallow: /admin/
+Allow: /
+Sitemap: https://example.com/sitemap.xml
+```
+
+**2. Upload the file**
+- Place it in the website’s root directory.
+- It should be accessible at `https://example.com/robots.txt`.
+
+**3. Manage and test it**
+- Edit the file whenever crawling rules change.
+- Check it in a browser or run:
+
+```bash
+curl https://example.com/robots.txt
+```
+
+- Make sure the rules are correct and don't accidentally block important pages.
+
+**Important:** `robots.txt` does not secure private pages. Use proper authentication and access controls to protect sensitive information.
+
 #### DHCP Process (DORA)
 1. Discover - client broadcasts to find a DHCP server
 2. Offer - server offers an IP address
@@ -1042,6 +1102,7 @@ A security model based on "never trust, always verify" - no user or device is tr
 
 # JWT (JSON Web Token)
 
+JSON Web Token (JWT) is a compact URL-safe means of representing claims to be transferred between two parties.
 A compact, self-contained token format used for authentication and information exchange, structured in three Base64URL-encoded parts separated by dots: `Header.Payload.Signature`.
 
 #### Structure
@@ -1074,6 +1135,7 @@ A compact, self-contained token format used for authentication and information e
 # Cookies and Sessions
 
 #### Cookies
+An internet cookie (or HTTP cookie) is a small text file that a web server sends to your web browser and stores on your device.
 Small key-value pairs stored by the browser and sent automatically with requests to the issuing domain.
 
 Key attributes:
@@ -1084,6 +1146,7 @@ Key attributes:
 - **Expires/Max-Age**: Controls cookie lifetime.
 
 #### Sessions
+A web session is a temporary connection and data-sharing period between a user's browser and a web server.
 Server-side state tied to a client via a session ID stored in a cookie.
 
 ```text

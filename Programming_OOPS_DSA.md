@@ -2569,6 +2569,109 @@ def assign_cookies(children, cookies):
 
 ## BFS / DFS (Graph Traversal)
 
+### Breadth-First Search (BFS)
+
+**Idea:** Visit all immediate neighbors first, then move outward level by level. BFS typically uses a **queue (FIFO)**.
+
+### Traversal levels
+
+``` mermaid
+flowchart TB
+    A((A)):::l0
+    B((B)):::l1
+    C((C)):::l1
+    D((D)):::l2
+    E((E)):::l2
+    F((F)):::l2
+    G((G)):::l2
+
+    A --- B
+    A --- C
+    B --- D
+    B --- E
+    C --- F
+    C --- G
+
+    classDef l0 fill:#f9d976,stroke:#8a6d1d,color:#222
+    classDef l1 fill:#9ed8f5,stroke:#287da8,color:#222
+    classDef l2 fill:#b7e4c7,stroke:#2d6a4f,color:#222
+```
+
+### Visit order
+
+**A → B → C → D → E → F → G**
+
+    Step Visit   Queue after adding unvisited neighbors
+  ------ ------- ----------------------------------------
+       1 A       B, C
+       2 B       C, D, E
+       3 C       D, E, F, G
+       4 D       E, F, G
+       5 E       F, G
+       6 F       G
+       7 G       Empty
+
+### Depth-First Search (DFS)
+
+**Idea:** Follow one branch as far as possible, then backtrack. DFS uses
+a **stack (LIFO)** or recursion.
+
+### One possible DFS path
+
+``` mermaid
+flowchart TB
+    A((1. A)) --> B((2. B))
+    B --> D((3. D))
+    D -. backtrack .-> B
+    B --> E((4. E))
+    E -. backtrack .-> A
+    A --> C((5. C))
+    C --> F((6. F))
+    F -. backtrack .-> C
+    C --> G((7. G))
+```
+
+Dashed arrows indicate backtracking conceptually; the exact drawing is a
+traversal illustration, not the graph's full edge set.
+
+### Visit order
+
+**A → B → D → E → C → F → G**
+
+The exact DFS order depends on the order in which neighbors are
+considered.
+
+### BFS vs DFS at a glance
+
+  -----------------------------------------------------------------------
+  Feature                 BFS                     DFS
+  ----------------------- ----------------------- -----------------------
+  Strategy                Explore level by level  Explore deeply, then
+                                                  backtrack
+
+  Main data structure     Queue (FIFO)            Stack (LIFO) or
+                                                  recursion
+
+  Finds shortest path in  Yes                     Not guaranteed
+  an unweighted graph?                            
+
+  Common uses             Shortest paths, levels, Backtracking, cycle
+                          nearest target          detection, connected
+                                                  components
+
+  Time complexity         `O(V + E)`              `O(V + E)`
+
+  Space complexity        `O(V)` worst case       `O(V)` worst case
+  -----------------------------------------------------------------------
+
+Here, `V` is the number of vertices and `E` is the number of edges.
+
+### Memory trick
+
+-   **BFS = Broad first**: finish the current level before going deeper.
+-   **DFS = Deep first**: keep following a branch until you must
+    backtrack.
+
 ```python
 from collections import deque
 

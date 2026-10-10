@@ -1334,6 +1334,59 @@ Every Pulumi file in this project (`storage.py`, `self_healing.py`, `dr.py`, `po
 Both IaC programs are designed to run correctly on their own — `cd platform/infra/pulumi && pulumi up` should work whether or not it was launched through `run.sh`. `env_loader.py` implements this for the Azure side: it walks upward from its own file location looking for a `.env` file (respecting an explicit `ENV_FILE` override), loads it via `python-dotenv`, and only `setdefault`s values that aren't already present in the process environment — so anything `run.sh` already exported (or a CI/CD secret) always wins over the file. `get_env()`/`get_secret()` in `__main__.py` then layer Pulumi's own `pulumi config` on top as the highest-priority override. The Terraform side achieves the equivalent precedence more simply, since `run.sh` sources `.env` with `set -a` before invoking `deploy_infra.sh`, so every `TF_VAR_*` value is already a real environment variable by the time Terraform runs — no separate discovery/loading code is needed on that side.
 
 
+### Vault Server
+Vault Server is the main service of HashiCorp Vault. It securely stores, manages, and controls access to sensitive information such as passwords, API keys, database credentials, and encryption keys.
+
+Think of it as a secure locker for your application's secrets.
+
+#### Why do we use Vault Server?
+
+Imagine your application connects to a database. You need a database username and password.
+
+Without Vault:
+
+```
+DB_USERNAME = "admin"DB_PASSWORD = "mypassword123"
+```
+
+These credentials are stored directly in your code, which is risky.
+
+With Vault, your application retrieves the credentials securely from Vault Server when needed.
+
+1. Application (Requests database credentials)
+2. Vault Server (Authenticates requests and controls secret access)
+3. Secrets / Database (Credentials are securely managed by Vault)
+
+```
+API Address: http://127.0.0.1:8200
+Root Token: hvs.xxxxxxxxxxxxx
+```
+
+Here's what these mean:
+
+- API Address: The URL applications and the Vault CLI use to communicate with Vault.
+- Root Token: A highly privileged token used to authenticate with Vault.
+- Port 8200: Vault's default API port.
+- Dev mode: Starts Vault with automatic initialization and unsealing, using temporary, in-memory storage.
+
+The server continues running in that terminal until you stop it, typically with `Ctrl+C`.
+
+#### Vault Server vs. Vault CLI
+
+| Component    | Purpose                                                  |
+| ------------ | -------------------------------------------------------- |
+| Vault Server | Stores and manages secrets and enforces access policies. |
+| Vault CLI    | Lets you interact with Vault using terminal commands.    |
+| Vault API    | Allows applications and tools to communicate with Vault. |
+
+For example:
+
+```
+vault server -dev # Starts the server.
+vault status      # Checks the server's status.
+vault kv put secret/app password=hello123   # Stores a secret through the CLI.
+vault kv get secret/app   # Retrieves that secret.
+```
 ---
 
 ## Serverless & Event-Driven Compute — Lambda and Azure Functions

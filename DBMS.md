@@ -178,14 +178,226 @@ A constraint where one attribute uniquely determines another. Written as `A → 
 ### First Normal Form (1NF)
 A table is in 1NF if all attributes contain only atomic (indivisible) values and each record is unique, with no repeating groups or arrays.
 
+Rule: Each column must contain a single (atomic) value. There should be no multivalued cells or repeating groups.
+
+Suppose we have this table:
+
+Before 1NF
+
+| Student_ID | Name  | Subjects     |
+| ---------- | ----- | ------------ |
+| 101        | Rahul | DBMS, SQL    |
+| 102        | Priya | Java, Python |
+
+The `Subjects` column contains multiple values in one cell, so it violates 1NF.
+
+After 1NF
+
+| Student_ID | Name  | Subject |
+| ---------- | ----- | ------- |
+| 101        | Rahul | DBMS    |
+| 101        | Rahul | SQL     |
+| 102        | Priya | Java    |
+| 102        | Priya | Python  |
+
+SQL example:
+
+```
+CREATE TABLE Student_Subject (
+    Student_ID INT,
+    Name VARCHAR(50),
+    Subject VARCHAR(50),
+    PRIMARY KEY (Student_ID, Subject)
+);
+```
+
+Remember: One cell = one value.
+
 ### Second Normal Form (2NF)
 A table is in 2NF if it is in 1NF and every non-key attribute is fully functionally dependent on the entire primary key (removes partial dependency, relevant for composite keys).
+
+Rules:
+
+- The table must already be in 1NF.
+- Every non-key attribute must depend on the whole candidate key, not just part of a composite key.
+
+Consider this table:
+
+Before 2NF
+
+| Student_ID | Course_ID | Student_Name | Course_Name |
+| ---------- | --------- | ------------ | ----------- |
+| 101        | C1        | Rahul        | DBMS        |
+| 101        | C2        | Rahul        | Java        |
+| 102        | C1        | Priya        | DBMS        |
+
+Composite primary key: (Student_ID, Course_ID)
+
+Here:
+
+- `Student_ID → Student_Name`
+- `Course_ID → Course_Name`
+- The complete key `(Student_ID, Course_ID)` identifies a student's course enrollment.
+
+But `Student_Name` depends only on `Student_ID`, and `Course_Name` depends only on `Course_ID`. These are partial dependencies, which violate 2NF.
+
+After 2NF
+
+Student table
+
+| Student_ID (PK) | Student_Name |
+| --------------- | ------------ |
+| 101             | Rahul        |
+| 102             | Priya        |
+
+Course table
+
+| Course_ID (PK) | Course_Name |
+| -------------- | ----------- |
+| C1             | DBMS        |
+| C2             | Java        |
+
+Enrollment table
+
+| Student_ID (PK, FK) | Course_ID (PK, FK) |
+| ------------------- | ------------------ |
+| 101                 | C1                 |
+| 101                 | C2                 |
+| 102                 | C1                 |
+
+SQL example:
+
+```
+CREATE TABLE Student (
+    Student_ID INT PRIMARY KEY,
+    Student_Name VARCHAR(50)
+);
+
+CREATE TABLE Course (
+    Course_ID VARCHAR(10) PRIMARY KEY,
+    Course_Name VARCHAR(50)
+);
+
+CREATE TABLE Enrollment (
+    Student_ID INT,
+    Course_ID VARCHAR(10),
+    PRIMARY KEY (Student_ID, Course_ID),
+    FOREIGN KEY (Student_ID) REFERENCES Student(Student_ID),
+    FOREIGN KEY (Course_ID) REFERENCES Course(Course_ID)
+);
+```
+
+Remember: No partial dependency on a composite key.
 
 ### Third Normal Form (3NF)
 A table is in 3NF if it is in 2NF and has no transitive dependency — non-key attributes must depend only on the primary key, not on other non-key attributes.
 
+Rules:
+
+- The table must already be in 2NF.
+- There must be no transitive dependency of non-key attributes on a candidate key.
+
+Consider this table:
+
+Before 3NF
+
+| Student_ID (PK) | Student_Name | Dept_ID | Dept_Name        |
+| --------------- | ------------ | ------- | ---------------- |
+| 101             | Rahul        | D1      | Computer Science |
+| 102             | Priya        | D2      | Mathematics      |
+| 103             | Amit         | D1      | Computer Science |
+
+Dependencies:
+
+- `Student_ID → Dept_ID`
+- `Dept_ID → Dept_Name`
+
+Therefore, `Student_ID → Dept_Name` indirectly through `Dept_ID`.
+
+`Dept_Name` depends on `Dept_ID`, not directly on the student key. This is a transitive dependency.
+
+After 3NF
+
+Student table
+
+| Student_ID (PK) | Student_Name | Dept_ID (FK) |
+| --------------- | ------------ | ------------ |
+| 101             | Rahul        | D1           |
+| 102             | Priya        | D2           |
+| 103             | Amit         | D1           |
+
+Department table
+
+| Dept_ID (PK) | Dept_Name        |
+| ------------ | ---------------- |
+| D1           | Computer Science |
+| D2           | Mathematics      |
+
+SQL example:
+
+```
+CREATE TABLE Department (
+    Dept_ID VARCHAR(10) PRIMARY KEY,
+    Dept_Name VARCHAR(100)
+);
+
+CREATE TABLE Student (
+    Student_ID INT PRIMARY KEY,
+    Student_Name VARCHAR(50),
+    Dept_ID VARCHAR(10),
+    FOREIGN KEY (Dept_ID) REFERENCES Department(Dept_ID)
+);
+```
+
+Remember: No transitive dependency of non-key attributes on a candidate key.
+
 ### Boyce-Codd Normal Form (BCNF)
 A stricter version of 3NF where for every functional dependency `A → B`, A must be a super key. Handles certain anomalies that 3NF does not.
+
+Rule: For every non-trivial functional dependency `X → Y`, X must be a superkey.
+
+BCNF is stricter than 3NF.
+
+Consider the following table:
+
+| Student | Subject | Teacher |
+| ------- | ------- | ------- |
+| Rahul   | DBMS    | Mr. Das |
+| Priya   | DBMS    | Mr. Das |
+| Rahul   | SQL     | Ms. Roy |
+
+Assume these rules:
+
+- A student can study many subjects.
+- Each teacher teaches only one subject.
+- A subject may be taught by multiple teachers.
+
+The functional dependency is:
+
+`Teacher → Subject`
+
+If `Teacher` is not a superkey, this dependency violates BCNF.
+
+Decompose the table into:
+
+Teacher_Subject
+
+| Teacher (PK) | Subject |
+| ------------ | ------- |
+| Mr. Das      | DBMS    |
+| Ms. Roy      | SQL     |
+
+Student_Teacher
+
+| Student | Teacher |
+| ------- | ------- |
+| Rahul   | Mr. Das |
+| Priya   | Mr. Das |
+| Rahul   | Ms. Roy |
+
+The decomposition separates the teacher's subject assignment from the student-teacher relationship. Under the stated assumptions, this removes the BCNF violation.
+
+Remember: Every determinant must be a superkey.
 
 ### Fourth Normal Form (4NF)
 Removes multivalued dependencies — a table should not contain two or more independent multivalued facts about an entity.
@@ -202,6 +414,15 @@ A table is in 5NF if it is in 4NF and cannot be decomposed into smaller tables w
 
 - **Lossless Join Decomposition**: Joining the decomposed tables back together must reproduce the original relation exactly, with no spurious tuples.
 - **Dependency Preservation**: All functional dependencies of the original relation must still be enforceable without needing a join.
+
+### Quick comparison of normal forms
+
+| Normal Form | Main rule                                      | Problem removed                         |
+| ----------- | ---------------------------------------------- | --------------------------------------- |
+| 1NF         | Atomic values                                  | Multivalued cells                       |
+| 2NF         | No partial dependency                          | Dependency on part of a composite key   |
+| 3NF         | No transitive dependency of non-key attributes | Indirect dependency                     |
+| BCNF        | Every determinant is a superkey                | Remaining determinant-related anomalies |
 
 ## Denormalization
 
