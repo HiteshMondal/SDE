@@ -243,7 +243,6 @@ A single AZ is a single point of failure. Spreading worker nodes, the database (
 
 The cloud provider is responsible for **security OF the cloud** (physical data centers, hypervisor, network infrastructure). The customer is responsible for **security IN the cloud** (IAM/RBAC policies, security group/NSG rules, OS patching, data encryption, application security). For managed services like RDS/EKS or Azure PostgreSQL/AKS, the provider takes on more of the operational burden, but the customer still owns configuration choices like network access rules and identity roles.
 
-
 ---
 
 ## Identity & Access Management — IAM and Azure RBAC

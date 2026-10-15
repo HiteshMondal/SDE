@@ -1370,6 +1370,622 @@ User-defined rules that restrict the values that can be entered into a column be
 
 ---
 
+# Installing and Setting Up Database Software
+
+## Choosing a Database System
+
+| Database | Type | Typical Use |
+|---|---|---|
+| MySQL / MariaDB | Relational, open source | Web applications, CMS, startups |
+| PostgreSQL | Relational, open source | Complex queries, analytics, enterprise apps |
+| SQLite | Relational, embedded (single file) | Mobile apps, learning, prototypes, local tools |
+| Microsoft SQL Server | Relational, commercial | Windows/.NET enterprise environments |
+| Oracle Database | Relational, commercial | Large enterprises, banking, ERP |
+| MongoDB | NoSQL document | Flexible schemas, large unstructured data |
+| Redis | NoSQL key-value | Caching, sessions, queues |
+
+> For learning SQL, SQLite (zero setup), MySQL, and PostgreSQL are the easiest starting points. Core SQL (`SELECT`, `JOIN`, `GROUP BY`) works across all of them, with small syntax differences.
+
+## Installing on Linux
+
+### MySQL
+
+```bash
+sudo apt update
+sudo apt install mysql-server
+sudo systemctl enable --now mysql
+sudo mysql_secure_installation        # Set root password, remove anonymous users, disable remote root login
+sudo mysql                            # Connect as root through the local socket
+```
+
+### PostgreSQL
+
+```bash
+sudo apt install postgresql postgresql-contrib
+sudo systemctl enable --now postgresql
+sudo -u postgres psql                 # Open psql as the postgres superuser
+```
+
+### SQLite
+
+```bash
+sudo apt install sqlite3
+sqlite3 practice.db                   # Creates the file if it does not exist
+```
+
+Useful SQLite shell commands (start with a dot, not SQL):
+
+```text
+.tables            # List tables
+.schema Employee   # Show CREATE statement for a table
+.headers on        # Show column names in output
+.mode column       # Align output in columns
+.read script.sql   # Run a SQL script file
+.quit              # Exit
+```
+
+## Installing on Windows and macOS
+
+| Platform | Common Approach |
+|---|---|
+| Windows | Official installer (MySQL Installer, PostgreSQL installer, SQL Server Express) |
+| macOS | `brew install mysql`, `brew install postgresql`, or Postgres.app |
+| Any OS | Docker container (see below) |
+
+## Running a Database with Docker
+
+Docker provides a disposable database without installing anything on the host system.
+
+```bash
+# MySQL
+docker run --name mysql-dev -e MYSQL_ROOT_PASSWORD=ChangeMe123 -p 3306:3306 -d mysql:8
+
+# PostgreSQL
+docker run --name pg-dev -e POSTGRES_PASSWORD=ChangeMe123 -p 5432:5432 -d postgres:16
+
+# Connect
+docker exec -it mysql-dev mysql -u root -p
+docker exec -it pg-dev psql -U postgres
+
+# Stop and remove
+docker stop mysql-dev && docker rm mysql-dev
+```
+
+> Without a volume (`-v`), data is lost when the container is removed. Use a volume for anything worth keeping.
+
+## Default Ports
+
+| Database | Default Port |
+|---|---|
+| MySQL / MariaDB | 3306 |
+| PostgreSQL | 5432 |
+| SQL Server | 1433 |
+| Oracle | 1521 |
+| MongoDB | 27017 |
+| Redis | 6379 |
+
+## Connecting to a Database
+
+### Command-Line Clients
+
+```bash
+mysql -u username -p -h hostname -P 3306 database_name
+psql -U username -h hostname -p 5432 -d database_name
+sqlite3 file.db
+```
+
+### Graphical Clients
+
+| Tool | Works With |
+|---|---|
+| DBeaver | Almost every database (free) |
+| MySQL Workbench | MySQL / MariaDB |
+| pgAdmin | PostgreSQL |
+| DataGrip | Many databases (paid) |
+| SQL Server Management Studio (SSMS) | SQL Server |
+| DB Browser for SQLite | SQLite |
+
+### Connection Details
+
+Every client needs the same five pieces of information:
+
+```text
+Host       → where the server runs (localhost, or an IP/DNS name)
+Port       → listening port (3306, 5432, ...)
+Database   → which database to open
+Username   → account to log in with
+Password   → account secret
+```
+
+> Connection errors almost always come from one of these five: wrong host, wrong port, server not running, firewall blocking the port, or wrong credentials.
+
+## Loading Sample Data
+
+```bash
+mysql -u root -p database_name < dump.sql           # Load a SQL dump into MySQL
+psql -U postgres -d database_name -f dump.sql       # Load into PostgreSQL
+sqlite3 practice.db < dump.sql                      # Load into SQLite
+```
+
+Well-known practice databases: Sakila and World (MySQL), Pagila and DVD Rental (PostgreSQL), Chinook (multi-database), Northwind (multi-database).
+
+---
+
+# Writing SQL Code
+
+## Running SQL
+
+| Method | Description |
+|---|---|
+| Interactive shell | Type statements in `mysql`, `psql`, or `sqlite3` |
+| Script file | Save statements in a `.sql` file and run it in one go |
+| GUI editor | Write and run statements in DBeaver, Workbench, pgAdmin, and so on |
+| Application code | Python, Java, Node.js, and similar send SQL through a database driver |
+
+```bash
+mysql -u root -p mydb < setup.sql
+psql -U postgres -d mydb -f setup.sql
+```
+
+## Statement Basics
+
+```sql
+-- Single-line comment
+/* Multi-line
+   comment */
+
+SELECT name, salary     -- statements end with a semicolon
+FROM Employee
+WHERE salary > 40000;
+```
+
+- Keywords are case-insensitive (`SELECT` = `select`), but uppercase keywords improve readability.
+- Table and column names may be case-sensitive depending on the database and operating system.
+- String literals use single quotes (`'Kolkata'`), not double quotes.
+- One statement ends at a semicolon, so a missing `;` is a common cause of "nothing happens" in a shell.
+
+## Formatting Conventions
+
+```sql
+-- Hard to read
+select e.name,d.dept_name,avg(e.salary) from employee e join department d on e.dept_id=d.dept_id where e.salary>30000 group by e.name,d.dept_name having avg(e.salary)>40000 order by 3 desc;
+
+-- Readable
+SELECT
+    d.dept_name,
+    AVG(e.salary) AS avg_salary
+FROM Employee e
+INNER JOIN Department d
+    ON e.dept_id = d.dept_id
+WHERE e.salary >= 30000
+GROUP BY d.dept_name
+HAVING AVG(e.salary) > 40000
+ORDER BY avg_salary DESC;
+```
+
+| Convention | Guideline |
+|---|---|
+| Keywords | UPPERCASE |
+| Identifiers | `snake_case` (`order_items`, `created_at`) |
+| Clauses | One clause per line, indented columns |
+| Aliases | Short, meaningful, with `AS` for column aliases |
+| Table names | Singular or plural, but consistent across the whole schema |
+| Columns | List them explicitly; avoid `SELECT *` in application code |
+
+## Habits for Safe Queries
+
+```sql
+-- Preview the rows first, then change them
+SELECT * FROM Employee WHERE dept_id = 3;
+UPDATE Employee SET salary = salary * 1.10 WHERE dept_id = 3;
+
+-- Wrap risky changes in a transaction
+BEGIN;
+DELETE FROM Orders WHERE order_date < '2020-01-01';
+SELECT COUNT(*) FROM Orders;      -- Verify the result looks right
+ROLLBACK;                         -- or COMMIT; once you are sure
+```
+
+| Habit | Reason |
+|---|---|
+| Run a `SELECT` with the same `WHERE` before `UPDATE`/`DELETE` | Confirms exactly which rows will be affected |
+| Check the affected row count after every write | A surprising number signals a wrong condition |
+| Use transactions for multi-step changes | `ROLLBACK` can undo mistakes (where the database supports it) |
+| Use `LIMIT` while exploring large tables | Avoids long-running or huge result sets |
+| Never write an `UPDATE`/`DELETE` without `WHERE` | It changes every row |
+| Back up before schema changes | `DROP` and `ALTER` can be irreversible |
+
+## Parameterized Queries
+
+Applications must never build SQL by joining user input into a string.
+
+```python
+# Vulnerable to SQL injection
+query = "SELECT * FROM Users WHERE name = '" + user_input + "'"
+
+# Safe: the driver sends the value separately from the SQL text
+cursor.execute("SELECT * FROM Users WHERE name = %s", (user_input,))
+```
+
+If `user_input` is `' OR '1'='1`, the first version returns every user. The second treats the whole input as a plain value.
+
+> SQL injection is consistently among the most common database-related security flaws. Parameterized queries (prepared statements) are the standard defence.
+
+## Common Table Expressions
+
+A `WITH` clause names an intermediate result, which makes long queries easier to read and test.
+
+```sql
+WITH dept_avg AS (
+    SELECT dept_id, AVG(salary) AS avg_salary
+    FROM Employee
+    GROUP BY dept_id
+)
+SELECT e.name, e.salary, d.avg_salary
+FROM Employee e
+JOIN dept_avg d ON e.dept_id = d.dept_id
+WHERE e.salary > d.avg_salary;
+```
+
+## Project Organization
+
+```text
+db/
+├── schema/          # CREATE TABLE definitions
+├── migrations/      # Ordered, versioned change scripts
+├── seed/            # Sample or reference data
+└── queries/         # Reusable reports and queries
+```
+
+Keep every `.sql` file in version control (Git) so that schema changes are reviewed and tracked like application code.
+
+---
+
+# Debugging SQL
+
+## Reading Error Messages
+
+An error message usually gives three clues: the error type or code, the position (line/near text), and the object name. Read the text immediately before the quoted "near" fragment, since the mistake is often just before it.
+
+## Common Errors and Causes
+
+| Error | Typical Cause | Fix |
+|---|---|---|
+| Syntax error near ... | Missing comma, quote, parenthesis, or keyword typo | Check the text just before the reported position |
+| Unknown column / column does not exist | Typo, wrong table, or alias used before it exists | Verify names with `DESCRIBE table` / `\d table` |
+| Table doesn't exist | Wrong database selected or name misspelled | Check the active database (`USE db;`), list tables |
+| Ambiguous column name | Same column name in two joined tables | Prefix with table alias (`e.dept_id`) |
+| Column must appear in GROUP BY | Selecting non-aggregated columns not in `GROUP BY` | Add the column to `GROUP BY` or aggregate it |
+| Aggregate function not allowed in WHERE | `WHERE COUNT(*) > 3` | Use `HAVING` |
+| Duplicate entry / unique violation | Inserting a value that already exists in a unique/primary key column | Check existing rows, use upsert or correct the data |
+| Foreign key constraint fails | Parent row missing, or child rows still exist on delete | Insert parent first / delete children first |
+| Cannot be null / NOT NULL violation | Required value missing from `INSERT` | Supply a value or define a default |
+| Data too long for column | Value exceeds `VARCHAR(n)` | Shorten the value or widen the column |
+| Deadlock found | Two transactions waiting on each other's locks | Retry the transaction; keep lock order consistent |
+| Access denied | Wrong credentials or missing privilege | Check user, host, and `GRANT` rights |
+
+## Silent Logic Bugs
+
+Queries that run without errors but return wrong results are harder to find.
+
+| Symptom | Likely Cause |
+|---|---|
+| Row count suddenly multiplies | Join on a non-unique column, or missing join condition (accidental cross join) |
+| Rows missing from a `LEFT JOIN` result | Filter on the right table placed in `WHERE` instead of `ON` |
+| `= NULL` returns nothing | Must use `IS NULL` |
+| `NOT IN` returns nothing | The subquery contains a `NULL`; use `NOT EXISTS` |
+| Averages look wrong | `NULL` values are ignored by `AVG`; integer division truncates |
+| Sorting looks wrong | Numbers stored as text sort alphabetically (`'10'` < `'9'`) |
+| Dates compare incorrectly | Date stored as text, or timezone mismatch |
+
+## Debugging Strategy
+
+```text
+1. Reproduce the problem with the smallest possible query.
+2. Run each subquery or CTE on its own and check its output.
+3. Add joins and filters one at a time, checking row counts at each step.
+4. Compare COUNT(*) before and after each join.
+5. Inspect suspicious values directly (SELECT DISTINCT, MIN, MAX, COUNT of NULLs).
+6. Check data types (DESCRIBE / \d / PRAGMA table_info).
+```
+
+```sql
+-- Quick data-quality checks
+SELECT COUNT(*) FROM Employee;
+SELECT COUNT(*) FROM Employee WHERE dept_id IS NULL;
+SELECT dept_id, COUNT(*) FROM Employee GROUP BY dept_id;
+SELECT DISTINCT status FROM Orders;
+
+-- Find duplicates
+SELECT email, COUNT(*)
+FROM Users
+GROUP BY email
+HAVING COUNT(*) > 1;
+```
+
+## Query Execution Plans
+
+`EXPLAIN` shows how the database intends to run a query, which is the first tool for slow-query debugging.
+
+```sql
+EXPLAIN SELECT * FROM Orders WHERE customer_id = 42;
+EXPLAIN ANALYZE SELECT * FROM Orders WHERE customer_id = 42;   -- PostgreSQL / MySQL 8: actually runs it and reports real timings
+```
+
+| Plan Clue | Meaning |
+|---|---|
+| Full table scan / `type: ALL` / Seq Scan | Reads every row; usually a missing index on a large table |
+| Index scan / `ref` / `range` | Uses an index (usually good) |
+| Large estimated vs actual rows gap | Outdated statistics; run `ANALYZE` |
+| Sort / temporary table on large data | Consider an index that matches `ORDER BY` / `GROUP BY` |
+
+> `EXPLAIN ANALYZE` executes the statement. Never use it on an `UPDATE` or `DELETE` unless inside a transaction that will be rolled back.
+
+## Logs and Monitoring Tools for Debugging
+
+| Tool | Purpose |
+|---|---|
+| Slow query log (MySQL) / `log_min_duration_statement` (PostgreSQL) | Records queries exceeding a time threshold |
+| `SHOW PROCESSLIST` / `pg_stat_activity` | Shows currently running queries and who runs them |
+| Error log | Server startup problems, crashes, permission errors |
+| `SHOW ENGINE INNODB STATUS` / `pg_locks` | Inspect lock waits and deadlocks |
+
+---
+
+# Database in Enterprise Production
+
+## Environments
+
+Production software never runs against a single database. Changes move through separate environments.
+
+| Environment | Purpose | Data |
+|---|---|---|
+| Development | Developers write and test code | Small fake or sample data |
+| Testing / QA | Automated and manual testing | Synthetic or anonymized data |
+| Staging | Final rehearsal, mirrors production | Production-like (masked) |
+| Production | Real users and real business data | Live, critical |
+
+> Never test or experiment directly in production. Real customer data in lower environments must be masked or anonymized.
+
+## Typical Architecture
+
+```text
+Users / Browsers / Mobile Apps
+          ↓
+   Load Balancer
+          ↓
+ Application Servers (many)
+          ↓
+   Connection Pool (PgBouncer, HikariCP, ProxySQL)
+          ↓
+   Primary Database  ── replication ──→  Read Replicas (reporting, read-heavy queries)
+          ↓
+   Backups / Archives (stored separately)
+```
+
+| Component | Role |
+|---|---|
+| Primary (master) | Accepts all writes |
+| Replica (standby/slave) | Copies data from the primary; serves reads, takes over on failure |
+| Connection pool | Reuses a limited number of database connections across many application requests |
+| Backup storage | Separate location from the database server |
+
+## How a Production Schema Looks
+
+Real systems have dozens to thousands of tables, with consistent conventions. An e-commerce example:
+
+```text
+customers ──< orders ──< order_items >── products >── categories
+                │
+                └──< payments
+```
+
+```sql
+CREATE TABLE customers (
+    customer_id   BIGINT PRIMARY KEY AUTO_INCREMENT,
+    email         VARCHAR(255) NOT NULL UNIQUE,
+    full_name     VARCHAR(100) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE orders (
+    order_id     BIGINT PRIMARY KEY AUTO_INCREMENT,
+    customer_id  BIGINT NOT NULL,
+    status       VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    total_amount DECIMAL(12,2) NOT NULL CHECK (total_amount >= 0),
+    created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+);
+
+CREATE INDEX idx_orders_customer ON orders(customer_id);
+CREATE INDEX idx_orders_status_created ON orders(status, created_at);
+```
+
+Common features seen in production tables:
+
+| Feature | Example | Why |
+|---|---|---|
+| Surrogate primary key | `id BIGINT AUTO_INCREMENT` or UUID | Stable, never changes |
+| Audit columns | `created_at`, `updated_at`, `created_by` | Track when and who changed data |
+| Soft delete | `is_deleted` or `deleted_at` | Keep history instead of removing rows |
+| Constraints | `NOT NULL`, `UNIQUE`, `CHECK`, `FOREIGN KEY` | Data integrity enforced by the database |
+| Status columns | `status VARCHAR(20)` or enum/lookup table | Workflow states |
+| Indexes on foreign keys and filters | `idx_orders_customer` | Fast joins and lookups |
+| Money as `DECIMAL` | `DECIMAL(12,2)` | Never `FLOAT` for currency |
+| Timestamps in UTC | `TIMESTAMP` stored as UTC | Avoids timezone confusion across regions |
+| Hashed passwords | `password_hash` | Never store plaintext passwords |
+
+## Schema Migrations
+
+Production schemas are never changed by hand-typing statements. Each change is a versioned script applied in order by a migration tool (Flyway, Liquibase, Alembic, Django migrations, Prisma, and similar).
+
+```text
+migrations/
+├── V001__create_customers.sql
+├── V002__create_orders.sql
+├── V003__add_phone_to_customers.sql
+└── V004__index_orders_status.sql
+```
+
+```sql
+-- V003__add_phone_to_customers.sql
+ALTER TABLE customers ADD COLUMN phone VARCHAR(20);
+```
+
+| Principle | Description |
+|---|---|
+| Versioned and ordered | Every environment reaches the same schema state |
+| Immutable | Never edit a migration that has already been applied; add a new one |
+| Reviewed | Changes go through code review like application code |
+| Backward compatible | The old application version must still work during rollout (add columns before using them, remove only after nothing uses them) |
+| Reversible plan | Know how to roll back before applying |
+
+## Users, Roles, and Least Privilege
+
+Applications and people never connect as the superuser.
+
+```sql
+CREATE ROLE app_readwrite;
+GRANT SELECT, INSERT, UPDATE, DELETE ON shop.* TO app_readwrite;
+
+CREATE ROLE reporting_readonly;
+GRANT SELECT ON shop.* TO reporting_readonly;
+```
+
+| Account Type | Privileges |
+|---|---|
+| Application | Only DML on its own schema; no `DROP`, no `GRANT` |
+| Reporting / analyst | `SELECT` only, often on a replica |
+| Migration tool | DDL rights, used only during deployment |
+| DBA | Administrative rights, with individual accounts and auditing |
+
+Credentials belong in a secrets manager or environment variables, never in source code or committed files.
+
+## Backups and Recovery
+
+| Practice | Description |
+|---|---|
+| Automated schedule | Full backups plus incrementals, run by a scheduler, not by hand |
+| Point-in-time recovery | Transaction logs (binlog / WAL) allow restoring to an exact moment |
+| Offsite copies | Backups stored away from the database server |
+| Restore tests | A backup is only proven when a restore has been tested |
+| Retention policy | Define how long each backup is kept |
+
+```bash
+mysqldump -u root -p --single-transaction shop > shop_backup.sql
+pg_dump -U postgres -Fc shop > shop_backup.dump
+```
+
+Two figures define recovery goals:
+
+| Term | Meaning |
+|---|---|
+| RPO (Recovery Point Objective) | Maximum acceptable data loss, measured in time |
+| RTO (Recovery Time Objective) | Maximum acceptable time to restore service |
+
+## High Availability and Scaling
+
+| Technique | Purpose |
+|---|---|
+| Replication | Copies data to standby servers |
+| Failover | Automatically promotes a replica if the primary fails |
+| Read replicas | Spread read traffic across several servers |
+| Connection pooling | Prevents running out of database connections |
+| Partitioning | Splits a huge table by range or key (for example by month) |
+| Sharding | Splits data across multiple database servers |
+| Caching (Redis, Memcached) | Reduces repeated reads from the database |
+| Archiving | Moves old data to cheaper storage |
+
+## Monitoring
+
+Metrics tracked continuously in production:
+
+```text
+Query latency (p95, p99)      Connections in use vs maximum
+Slow queries                  Replication lag
+CPU, memory, disk I/O         Disk space and growth rate
+Lock waits and deadlocks      Cache hit ratio
+Backup success/failure        Error rate
+```
+
+Common tools: Prometheus + Grafana, Datadog, New Relic, CloudWatch, pgAdmin / MySQL Enterprise Monitor, `pg_stat_statements`, Percona Monitoring and Management.
+
+## Change Management in Production
+
+```text
+1. Develop and test the change in development.
+2. Verify in staging with production-like data volume.
+3. Take or confirm a fresh backup.
+4. Apply during an agreed maintenance window.
+5. Monitor errors and query performance after release.
+6. Keep a tested rollback plan ready.
+```
+
+> Operations that look harmless can lock a table. Adding an index or changing a column type on a table with hundreds of millions of rows can block writes for a long time, so large changes use online schema change tools (such as `pt-online-schema-change`, `gh-ost`, or `CREATE INDEX CONCURRENTLY` in PostgreSQL).
+
+## Managed and Cloud Databases
+
+Many enterprises run databases as managed services, where the provider handles patching, backups, and failover.
+
+| Provider | Services |
+|---|---|
+| AWS | RDS, Aurora, DynamoDB |
+| Google Cloud | Cloud SQL, Spanner, BigQuery |
+| Azure | Azure SQL Database, Cosmos DB |
+| Others | MongoDB Atlas, PlanetScale, Neon, Supabase |
+
+## Data Security and Compliance
+
+| Practice | Description |
+|---|---|
+| Encryption at rest | Disk or tablespace encryption |
+| Encryption in transit | TLS for all connections |
+| Network isolation | Database in a private network, not exposed to the internet |
+| Auditing | Log who accessed or changed sensitive data |
+| Data masking | Hide or scramble sensitive columns outside production |
+| Backup encryption | Protect backup files like production data |
+| Regulations | GDPR, HIPAA, PCI-DSS, and similar laws shape what can be stored and for how long |
+
+## Application and Database Interaction
+
+| Concept | Description |
+|---|---|
+| ORM (Object-Relational Mapper) | Library (Hibernate, SQLAlchemy, Django ORM, Prisma) that maps tables to objects and generates SQL |
+| N+1 query problem | One query loads a list, then one extra query runs per row; fix with a join or batch fetch |
+| Transactions in code | Group related writes so they succeed or fail together |
+| Retry logic | Retry on deadlocks and transient connection errors |
+| Pagination | Use `LIMIT` with an indexed ordering instead of loading everything |
+
+```sql
+SELECT order_id, total_amount
+FROM orders
+WHERE customer_id = 42
+ORDER BY created_at DESC
+LIMIT 20 OFFSET 0;
+```
+
+## Things Everyone Working with Databases Should Know
+
+```text
+1. Production data is real: treat every write as irreversible until proven otherwise.
+2. Backups are only useful if restores have been tested.
+3. Preview with SELECT before any UPDATE or DELETE.
+4. Do not connect to production with personal superuser accounts for routine work.
+5. Schema changes go through migrations, version control, and review.
+6. Indexes speed up reads but slow down writes and use disk space.
+7. Store timestamps in UTC and money as DECIMAL.
+8. Never store plaintext passwords or commit credentials to source control.
+9. Check execution plans before blaming the database for slowness.
+10. Most "database problems" are really query, index, or application problems.
+```
+
+**Remember:** A production database is more than tables and queries. It includes environments, access control, migrations, backups, monitoring, and a change process, and these matter as much as SQL knowledge.
+
+---
+
 # Scenario-Based Questions and Answers
 
 ## Question 1: Redundant Data Across Tables

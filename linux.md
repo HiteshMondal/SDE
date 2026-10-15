@@ -1184,8 +1184,6 @@ chmod 1777 /tmp                # Sticky + rwxrwxrwx
 
 ---
 
----
-
 ## Users, Groups & Access
 
 ### What Is Root?
@@ -1403,8 +1401,6 @@ vi sshkey.private
 chmod 600 sshkey.private
 ssh -i sshkey.private -p port_number username@hostname
 ```
-
----
 
 ---
 
@@ -2145,8 +2141,6 @@ sudo httpd -t && sudo systemctl reload httpd
 
 ---
 
----
-
 ## Archives & Compression
 
 ### tar — Tape Archive
@@ -2220,8 +2214,6 @@ file data
 | --------- | -------------- | ---------------------- |
 | `gunzip` | `.gz` | Gzip-compressed files |
 | `bunzip2` | `.bz2` | Bzip2-compressed files |
-
----
 
 ---
 
@@ -2318,6 +2310,308 @@ dnf install nginx             # dnf is modern replacement for yum
 
 ---
 
+### Software Installation Methods
+
+Software on Linux can come from a repository (managed by the package manager) or from a file you download yourself. Which one you use decides who tracks dependencies, updates, and removal.
+
+| Method | Format | Tool | Dependencies Resolved | Typical Use |
+|---|---|---|---|---|
+| Repository install | none (by name) | `apt`, `dnf` | Yes | Default, preferred |
+| Debian package | `.deb` | `dpkg`, `apt` | Only with `apt install ./file.deb` | Vendor downloads (Chrome, VS Code, Zoom) |
+| RPM package | `.rpm` | `rpm`, `dnf`, `yum` | Only with `dnf install ./file.rpm` | Vendor downloads on RHEL/Fedora |
+| Tarball (prebuilt) | `.tar.gz`, `.tar.xz` | `tar` | No | Portable apps (Node.js, Go, JDK) |
+| Tarball (source) | `.tar.gz` | `./configure`, `make` | No (install build tools manually) | Custom builds, latest versions |
+| Universal packages | Snap, Flatpak, AppImage | `snap`, `flatpak` | Bundled | Distro-independent apps |
+
+> Order of preference: repository → vendor `.deb`/`.rpm` → prebuilt tarball → build from source. The further down the list, the more you must track yourself.
+
+### Downloading Packages
+
+```bash
+wget https://example.com/app_1.0_amd64.deb         # Download to current directory
+curl -LO https://example.com/app_1.0_amd64.deb     # -L follow redirects, -O keep remote filename
+wget -c https://example.com/large.rpm              # Resume an interrupted download
+```
+
+#### Verifying Downloads
+
+Always check integrity before installing, especially for software from outside the official repositories.
+
+```bash
+sha256sum app_1.0_amd64.deb                  # Compare output with the checksum on the vendor's site
+sha256sum -c app.sha256                      # Verify against a checksum file
+gpg --verify app.tar.gz.sig app.tar.gz       # Verify a signature (needs the vendor's public key imported)
+```
+
+> A matching checksum proves the file was not corrupted or altered in transit, provided the checksum itself came from a trusted source.
+
+#### Checking System Architecture
+
+Download the package built for your CPU architecture.
+
+```bash
+uname -m                      # x86_64, aarch64, armv7l
+dpkg --print-architecture     # amd64, arm64 (Debian/Ubuntu)
+```
+
+| `uname -m` | Package Name Usually Says |
+|---|---|
+| `x86_64` | `amd64`, `x86_64` |
+| `aarch64` | `arm64`, `aarch64` |
+
+### Installing .deb Packages
+
+`.deb` is the package format for Debian, Ubuntu, Linux Mint, and related distributions.
+
+#### Inspect Before Installing
+
+```bash
+dpkg-deb -I app_1.0_amd64.deb      # Package info: name, version, dependencies
+dpkg-deb -c app_1.0_amd64.deb      # List files the package will install
+```
+
+#### Install
+
+```bash
+sudo apt install ./app_1.0_amd64.deb    # Recommended: resolves dependencies automatically
+sudo dpkg -i app_1.0_amd64.deb          # Low-level install: does NOT fetch dependencies
+sudo apt -f install                     # Fix broken dependencies left by dpkg -i
+```
+
+> The `./` in `apt install ./app.deb` is required. Without it, `apt` searches repositories for a package literally named `app.deb`.
+
+#### Query and Manage
+
+```bash
+dpkg -l                        # List all installed packages
+dpkg -l | grep app             # Check if a package is installed
+dpkg -s app                    # Status and details of an installed package
+dpkg -L app                    # List files installed by the package
+dpkg -S /usr/bin/app           # Which package owns this file
+sudo apt remove app            # Remove package, keep configuration
+sudo apt purge app             # Remove package and configuration
+sudo dpkg -r app               # Low-level remove
+sudo dpkg -P app               # Low-level purge
+```
+
+### Installing .rpm Packages
+
+`.rpm` is the package format for RHEL, CentOS, Rocky, AlmaLinux, Fedora, and openSUSE.
+
+#### Inspect Before Installing
+
+```bash
+rpm -qpi app-1.0.x86_64.rpm      # Package info (q = query, p = package file, i = info)
+rpm -qpl app-1.0.x86_64.rpm      # List files in the package
+rpm -K app-1.0.x86_64.rpm        # Check signature and integrity
+```
+
+#### Install
+
+```bash
+sudo dnf install ./app-1.0.x86_64.rpm     # Recommended: resolves dependencies
+sudo yum install ./app-1.0.x86_64.rpm     # Older systems
+sudo rpm -ivh app-1.0.x86_64.rpm          # Low-level: i = install, v = verbose, h = hash progress bar
+sudo rpm -Uvh app-1.0.x86_64.rpm          # Upgrade (installs if not present)
+```
+
+#### Query and Manage
+
+```bash
+rpm -qa                        # List all installed packages
+rpm -qa | grep app             # Check if a package is installed
+rpm -qi app                    # Details of an installed package
+rpm -ql app                    # Files installed by the package
+rpm -qf /usr/bin/app           # Which package owns this file
+sudo dnf remove app            # Remove package
+sudo rpm -e app                # Low-level remove
+```
+
+### dpkg vs rpm Comparison
+
+| Task | Debian/Ubuntu | RHEL/Fedora |
+|---|---|---|
+| Install local file | `apt install ./f.deb` | `dnf install ./f.rpm` |
+| Low-level install | `dpkg -i` | `rpm -ivh` |
+| List installed | `dpkg -l` | `rpm -qa` |
+| Files of a package | `dpkg -L pkg` | `rpm -ql pkg` |
+| Owner of a file | `dpkg -S file` | `rpm -qf file` |
+| Package info | `dpkg -s pkg` | `rpm -qi pkg` |
+| Remove | `apt remove pkg` | `dnf remove pkg` |
+
+### Installing .tar.gz Archives
+
+A tarball is just an archive. It carries no dependency information, no install script by default, and no uninstall record, so first check which kind it is.
+
+```bash
+tar -tzf app.tar.gz | head       # Peek at the contents without extracting
+tar -xzf app.tar.gz              # Extract
+cd app-1.0/
+ls                               # Look for README, INSTALL, configure, Makefile, bin/
+```
+
+| What You See After Extracting | Type | Next Step |
+|---|---|---|
+| `bin/`, `lib/`, ready-made executable | Prebuilt binary | Move to a permanent location and add to PATH |
+| `configure`, `Makefile`, `src/` | Source code | Compile and install |
+| `install.sh` | Installer script | Read it first, then run it |
+
+#### Prebuilt Binary Tarball
+
+```bash
+tar -xzf node-v20.x-linux-x64.tar.gz
+sudo mv node-v20.x-linux-x64 /opt/node                    # Third-party software convention: /opt
+sudo ln -s /opt/node/bin/node /usr/local/bin/node         # Make it available in PATH via symlink
+node --version
+```
+
+Alternative: add the program's `bin/` directory to PATH instead of linking.
+
+```bash
+echo 'export PATH="$PATH:/opt/node/bin"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### Source Code Tarball
+
+```bash
+sudo apt install build-essential                 # Compiler and make (Debian/Ubuntu)
+sudo dnf groupinstall "Development Tools"        # Equivalent on RHEL/Fedora
+
+tar -xzf app-1.0.tar.gz
+cd app-1.0/
+./configure --prefix=/usr/local                  # Check system, generate Makefile
+make -j"$(nproc)"                                # Compile using all CPU cores
+sudo make install                                # Copy built files into place
+```
+
+| Step | Purpose |
+|---|---|
+| `./configure` | Detects libraries and tools, generates a `Makefile`; fails when dependencies are missing |
+| `make` | Compiles the source into binaries |
+| `make install` | Copies binaries, libraries, and docs into the `--prefix` directory |
+| `make uninstall` | Removes the installed files, only if the project provides this target |
+
+```bash
+sudo apt install checkinstall
+sudo checkinstall            # Replaces "make install": builds a .deb so the package manager can track and remove it
+```
+
+> Software built from source and installed with `make install` is invisible to `apt`/`dnf`. Use `/usr/local` (the default prefix) or `/opt` so it stays separate from packages the system manages.
+
+#### Where Installed Files Typically Go
+
+| Location | Used For |
+|---|---|
+| `/usr/bin`, `/bin` | Files installed by the distribution's package manager |
+| `/usr/local/bin` | Programs you install manually (in PATH by default) |
+| `/opt/appname` | Self-contained third-party applications |
+| `~/.local/bin` | Per-user programs (no root needed) |
+| `/etc/appname` | Configuration files |
+| `/var/log/appname` | Log files |
+
+### Other Installer Types
+
+```bash
+# Self-extracting installers (.run, .sh)
+chmod +x installer.run          # Downloaded files are not executable by default
+less installer.run              # Read what it does before running
+sudo ./installer.run
+
+# AppImage: single portable executable, no install needed
+chmod +x App.AppImage
+./App.AppImage
+
+# Snap
+sudo snap install code --classic
+snap list
+sudo snap remove code
+
+# Flatpak
+flatpak install flathub org.videolan.VLC
+flatpak list
+flatpak uninstall org.videolan.VLC
+```
+
+### Adding Third-Party Repositories
+
+Vendors often provide a repository so that `apt`/`dnf` can install and update their software automatically. This is better than a one-off `.deb` or `.rpm`.
+
+```bash
+# Debian/Ubuntu: trust the vendor's signing key, then add the repository
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://example.com/key.gpg | sudo gpg --dearmor -o /etc/apt/keyrings/example.gpg
+echo "deb [signed-by=/etc/apt/keyrings/example.gpg] https://example.com/apt stable main" | \
+sudo tee /etc/apt/sources.list.d/example.list
+sudo apt update
+sudo apt install example-app
+```
+
+```bash
+# RHEL/Fedora: create a repo file
+sudo tee /etc/yum.repos.d/example.repo <<'EOF'
+[example]
+name=Example Repository
+baseurl=https://example.com/rpm
+enabled=1
+gpgcheck=1
+gpgkey=https://example.com/key.gpg
+EOF
+sudo dnf install example-app
+```
+
+> Repository files and key locations are the same ones listed in the `apt` vs `yum`/`dnf` table above (`/etc/apt/`, `/etc/yum.repos.d/`).
+
+### Installation Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| `dependency problems - leaving unconfigured` | Missing dependencies after `dpkg -i` | `sudo apt -f install` |
+| `Unable to locate package` | Package index outdated or repo missing | `sudo apt update`, check repository |
+| `Could not get lock /var/lib/dpkg/lock` | Another `apt`/`dpkg` process is running | Wait, or check with `ps aux \| grep apt` |
+| `NO_PUBKEY` / GPG error | Repository signing key not imported | Import the vendor's key |
+| `Permission denied` | File not executable or missing privileges | `chmod +x file`, or use `sudo` |
+| `command not found` after install | Not in `$PATH` or shell cache stale | Add to PATH, run `hash -r` or open a new terminal |
+| `Exec format error` | Wrong CPU architecture | Check `uname -m`, download the correct build |
+| `configure: error: C compiler cannot create executables` | Build tools missing | Install `build-essential` |
+| `configure: error: library X not found` | Development headers missing | Install the matching `-dev` (`-devel` on RHEL) package |
+| `error while loading shared libraries: libX.so` | Runtime library missing | Install the package providing it, or run `ldd binary` to inspect |
+
+```bash
+ldd /opt/app/bin/app             # List shared libraries a binary needs; "not found" marks the missing ones
+file /opt/app/bin/app            # Shows architecture, e.g. "ELF 64-bit LSB executable, x86-64"
+```
+
+### Uninstalling and Cleanup
+
+```bash
+sudo apt remove app && sudo apt autoremove         # Remove package and unused dependencies
+sudo apt purge app                                  # Also remove configuration
+sudo dnf remove app                                 # RHEL/Fedora
+
+# Tarball install: no package record exists, so undo it manually
+sudo make uninstall                                 # Only if supported (run in the original build directory)
+sudo rm -rf /opt/node
+sudo rm /usr/local/bin/node
+```
+
+> Keep the original source directory after `make install`. It is often the only way to run `make uninstall` later.
+
+### Safe Installation Checklist
+
+```text
+1. Prefer the distribution's repository.
+2. Download only from the official vendor site (HTTPS).
+3. Verify the checksum or signature.
+4. Confirm architecture matches (uname -m).
+5. Inspect the package or script before running it (dpkg-deb -c, rpm -qpl, less install.sh).
+6. Use apt/dnf to install local files so dependencies are resolved.
+7. Avoid piping downloads straight into a root shell (curl ... | sudo bash) unless the source is fully trusted.
+8. Note what you installed and where, so you can remove it later.
+```
+
+**Remember:** Package managers (`apt`, `dnf`) track files, dependencies, and removal. Tarballs and `make install` do not. Anything you install manually is yours to track.
+
 ---
 
 ## Disk Partitioning & Mounting
@@ -2360,8 +2654,6 @@ UUID=xxxx-xxxx  none            swap       sw              0       0
 ```
 - `dump`: 1 = back up with `dump` utility, 0 = skip
 - `pass`: order `fsck` checks filesystems at boot; `0` = don't check, `1` = root first
-
----
 
 ---
 
@@ -2512,8 +2804,6 @@ ulimit -Sn                   # show the soft limit (current enforced value)
 
 ---
 
----
-
 ## Process Management
 
 ### ps vs top
@@ -2633,8 +2923,6 @@ killall nginx          # kill all processes with exact name match
 
 ---
 
----
-
 ## Scheduling (cron & at)
 
 | Feature | `cron` | `at` |
@@ -2687,8 +2975,6 @@ at> <Ctrl+D>
 atq    # List pending at jobs
 atrm 3 # Remove job number 3
 ```
-
----
 
 ---
 
@@ -2800,8 +3086,6 @@ journalctl -u nginx -f
 
 ---
 
----
-
 ## Links (Soft vs Hard)
 
 ### What Is an Inode?
@@ -2887,8 +3171,6 @@ A symlink stores a **path string**, not a reference to the file itself — movin
 
 ---
 
----
-
 ## SELinux
 
 Security-Enhanced Linux (SELinux) is a mandatory access control (MAC) security framework built into the Linux kernel — primarily used in RHEL/CentOS systems.
@@ -2919,8 +3201,6 @@ restorecon -Rv /var/www/html/
 # View SELinux denials in audit log
 grep "denied" /var/log/audit/audit.log
 ```
-
----
 
 ---
 
@@ -2960,8 +3240,6 @@ echo "eyJuYW1lIjoiQWxpY2UifQ==" | base64 -d
 
 ---
 
----
-
 ## Hashing
 
 ```bash
@@ -2971,8 +3249,6 @@ md5sum test.txt
 
 echo "hello" | md5sum    # Hashing text
 ```
-
----
 
 ---
 
@@ -3030,8 +3306,6 @@ sudo journalctl -u postfix    # Check Postfix service logs
 ```
 
 > Installing `mailutils` alone does not guarantee delivery. Configure an MTA such as Postfix or an authorized SMTP relay, and check the logs if messages fail to arrive. Use a real recipient address and never include passwords or other secrets in test emails.
-
----
 
 ---
 
@@ -3719,8 +3993,6 @@ echo "[DEBUG] About to run: $command"
 
 ---
 
----
-
 ## Advanced Shell Scripting
 
 ### Subshell `( )` vs Grouping `{ }`
@@ -4143,8 +4415,6 @@ set -e    # Turn it back on
 
 ---
 
----
-
 ## I/O Redirection & Pipelines
 
 Linux programs use three standard streams:
@@ -4350,8 +4620,6 @@ cat <(echo "a") <(echo "b")
 
 ---
 
----
-
 ## Linux Directory Structure
 
 The Linux filesystem follows the Filesystem Hierarchy Standard (FHS), which standardizes directory structure across all distributions.
@@ -4408,8 +4676,6 @@ cat /etc/hosts
 | `/opt` | Optional software | `/opt/google/chrome`, `/opt/docker/` |
 | `/mnt` | Manual mounts | `mount /dev/sdb1 /mnt` |
 | `/media` | Auto-mounted media | `/media/usb`, `/media/cdrom` |
-
----
 
 ---
 
