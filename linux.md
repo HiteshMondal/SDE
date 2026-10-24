@@ -167,6 +167,39 @@ clear            # clear the terminal screen
 exit             # close the current shell session
 ```
 
+### pwd vs dirs — Current Directory vs Directory Stack
+
+| | `pwd` | `dirs` |
+|---|---|---|
+| Shows | The current directory only | The **directory stack** (a list built with `pushd`/`popd`) |
+| Output | One absolute path | Several paths, home shown as `~`, leftmost = current directory |
+| Availability | Everywhere (builtin and `/bin/pwd`) | Bash/zsh builtin only (not in `sh`/`dash`) |
+
+```bash
+pwd                  # /home/hitesh
+pushd /var/log       # go there AND push it on the stack; prints: /var/log ~
+pushd /etc           # prints: /etc /var/log ~
+dirs                 # /etc /var/log ~      (leftmost is where you are now)
+dirs -v              # numbered, one per line: 0 /etc  1 /var/log  2 ~
+dirs -l              # long form, no ~ shortening
+dirs -c              # clear the stack
+
+pushd                # no argument: swap the top two entries
+popd                 # drop the top entry and cd to the new top
+popd +1              # remove entry number 1 without changing directory
+```
+
+> `cd -` remembers only **one** previous directory. The stack remembers as many as you push. Plain `cd` replaces the top entry of the stack instead of adding one.
+
+`pwd` also has two modes for symlinks:
+
+```bash
+ln -s /var/log ~/logs
+cd ~/logs
+pwd          # /home/hitesh/logs   (-L, default: the path you typed, symlink kept)
+pwd -P       # /var/log            (-P: physical path, symlinks resolved)
+```
+
 ### Chaining Commands
 ```bash
 cmd1 ; cmd2         # Run cmd1, then cmd2 regardless of whether cmd1 succeeded
@@ -1505,6 +1538,33 @@ grep "[A-Z]" file.txt              # Contains uppercase letters
 grep -E "colou?r" file.txt         # Match "color" or "colour"
 ```
 
+### grep vs find — Searching Inside vs Searching For
+
+| | `grep` | `find` |
+|---|---|---|
+| Searches | The **contents** of files | The **files themselves**: name, type, size, time, owner, permissions |
+| Matches with | Regex on each line | Tests like `-name` (glob, not regex), `-size`, `-mtime`, `-perm` |
+| Output | Matching lines (or filenames with `-l`) | File paths |
+| Recursion | Only with `-r` | Recursive by default |
+| Question it answers | "Which line says X?" | "Which file is named/sized/changed like Y?" |
+
+```bash
+grep -rl "password" /etc 2>/dev/null     # files whose CONTENT contains "password"
+find /etc -name "*password*"             # files whose NAME contains "password"
+```
+
+They work best together:
+
+```bash
+grep -rn "TODO" --include="*.py" .                    # grep alone, limited to .py files
+grep -rn "TODO" --exclude-dir=.git .                  # skip a directory
+find . -name "*.log" -mtime -1 -exec grep -l "ERROR" {} +     # logs changed today that contain ERROR
+find . -name "*.sh" -exec grep -H "rm -rf" {} \;              # -H prints the filename with each match
+find . -type f -name "*.conf" -print0 | xargs -0 grep -n "listen"   # safe with spaces in names
+```
+
+> Rule of thumb: you know part of the name, size, or date → `find`. You know part of the text → `grep -r`. Both → `find ... -exec grep`. For a fast name-only lookup from an index, use `locate` (refresh with `sudo updatedb`).
+
 ### wc — Word Count
 
 ```bash
@@ -1572,6 +1632,114 @@ awk '$3>100'                       # Filter
 ```
 > *Why is awk powerful?* It can filter, calculate, format, search, parse, and generate reports.
 
+#### awk Structure and Built-in Variables
+
+```text
+awk 'BEGIN { before input }  pattern { per matching record }  END { after input }' file
+```
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `FS` | Input field separator (same as `-F`) | whitespace |
+| `OFS` | Output field separator (used by `print a, b`) | space |
+| `RS` | Input **record** separator | newline |
+| `ORS` | Output record separator | newline |
+| `NR` | Record number, across all files | |
+| `FNR` | Record number in the current file | |
+| `NF` | Number of fields in this record | |
+| `FILENAME` | Current input file | |
+| `OFMT` | Number-to-string format used by `print` | `%.6g` |
+| `CONVFMT` | Number-to-string format for concatenation and array subscripts | `%.6g` |
+| `SUBSEP` | Joins the indexes in `a[i,j]` | `\034` |
+| `RSTART`, `RLENGTH` | Set by `match()` | |
+| `ENVIRON`, `ARGV`, `ARGC` | Environment variables, command-line arguments | |
+
+#### Controlling Number Conversion: OFMT, CONVFMT, printf
+
+```bash
+awk 'BEGIN { print 10/3 }'                          # 3.33333    default OFMT is %.6g
+awk 'BEGIN { OFMT="%.2f"; print 10/3, 4/2 }'        # 3.33 2     whole numbers are never reformatted
+awk 'BEGIN { OFMT="%.2f"; x=3.14159; print x; print x "" }'
+# 3.14       print uses OFMT
+# 3.14159    x "" is a string conversion, so it uses CONVFMT
+awk 'BEGIN { CONVFMT="%.2f"; a=3.14159; b=a ""; print b }'   # 3.14
+awk '{ printf "%.2f\n", $2 }' file                  # most reliable: format explicitly
+```
+
+Forcing number or string:
+
+```bash
+awk '{ n = $1 + 0 }'          # force number: "12abc"+0 is 12, "abc"+0 is 0
+awk '{ s = $1 "" }'           # force string
+echo "10 9" | awk '{ print ($1 > $2) }'       # 1   input fields that look numeric compare as numbers
+awk 'BEGIN { print ("10" > "9") }'            # 0   string constants compare as text
+```
+
+* `printf "%.2f"` **rounds**. To truncate (as in the scores exercise): `awk '{s+=$2; n++} END {printf "%.2f\n", int(s/n*100)/100}'`
+* Hex strings like `0x1A` read from input are treated differently by different awks. In gawk, `strtonum("0x1A")` gives 26.
+
+#### RS — Record Separator
+
+```bash
+printf 'a,b,c' | awk 'BEGIN { RS="," } { print NR": "$0 }'     # 1: a   2: b   3: c
+printf 'a,b,c\n' | awk 'BEGIN { RS="," } { print NR": "$0 }'   # last record is "c\n" -> extra blank line
+awk 'BEGIN { RS=""; FS="\n" } { print "Record " NR ": " $1 }' file   # paragraph mode
+```
+
+* `RS=""` = paragraph mode: blank lines separate records, and newline also separates fields
+* A multi-character `RS` as a regex is a gawk/mawk extension (POSIX uses only the first character); gawk stores the matched text in `RT`
+
+#### OFS and Rebuilding a Line
+
+```bash
+awk 'BEGIN { FS=":"; OFS="," } { $1=$1; print }' /etc/passwd    # assigning a field rebuilds $0 with OFS
+awk -F: -v OFS=, '{ print $1, $3 }' /etc/passwd                 # -v sets a variable before BEGIN
+```
+
+#### SUBSEP — Multi-Index Arrays
+
+`a[i,j]` is stored as `a[i SUBSEP j]`. This is awk's version of a Python tuple key.
+
+```bash
+awk '{ sales[$1,$2] += $3 }
+     END { for (k in sales) { split(k, p, SUBSEP); print p[1], p[2], sales[k] } }' sales.txt
+# input: "north apple 5"  ->  output: north apple 5
+
+awk 'BEGIN { a[1,2]="x"; if ((1,2) in a) print "found" }'       # membership test needs parentheses
+awk 'BEGIN { SUBSEP=":"; a[1,2]=5; for (k in a) print k }'      # 1:2
+```
+
+#### RSTART and RLENGTH — match()
+
+```bash
+echo "order id: 4521 shipped" | awk '{
+  if (match($0, /[0-9]+/)) print RSTART, RLENGTH, substr($0, RSTART, RLENGTH)
+}'
+# 11 4 4521
+```
+
+If there is no match, `RSTART` is `0` and `RLENGTH` is `-1`.
+
+#### Other Useful awk Commands and Idioms
+
+```bash
+awk 'NR==1' f                          # first line
+awk 'NR>1' f                           # skip the header
+awk 'NF' f                             # drop blank lines
+awk 'END { print NR }' f               # count lines
+awk '!seen[$0]++' f                    # remove duplicates, keep original order
+awk '/start/,/end/' f                  # range between two patterns
+awk '$3 > 100 && $1 ~ /^web/' f        # ~ matches a regex, !~ does not match
+awk -F'[:,]' '{ print $1 }' f          # regex as separator
+awk '{ gsub(/foo/, "bar"); print }' f  # replace all (sub() = first only)
+awk '{ print length($0), toupper($1), substr($2,1,3), index($0,"x") }' f
+awk '{ n = split($0, parts, ",") }' f  # split a string into an array, returns the count
+awk 'FNR==NR { a[$1]=$2; next } $1 in a { print $0, a[$1] }' f1 f2   # join two files on column 1
+awk '{ print > ($1 ".txt") }' f        # write each row to a file named after column 1
+awk -v name="Hitesh" 'BEGIN { print "Hi " name }'
+awk 'BEGIN { "date" | getline d; print d }'      # run a command, read its output
+```
+
 ### sed — Stream Editor
 
 ```bash
@@ -1591,6 +1759,113 @@ sed 's/[0-9]/X/g'                  # Replace using regex
 | Best for replacing text | Best for parsing structured data |
 | Line-oriented editing | Field-oriented processing |
 | Supports regex | Supports variables, conditions, loops, arithmetic |
+
+#### sed Structure: Address + Command
+
+```text
+sed [options] 'address command' file
+        address = which lines (optional, default = every line)
+        command = what to do with them
+```
+
+| Option | Meaning |
+|---|---|
+| `-n` | Silent: print only what a command (`p`) prints explicitly |
+| `-i` / `-i.bak` | Edit the file in place / in place with a backup copy |
+| `-e` | Add a script piece; use several `-e` or separate with `;` |
+| `-f script.sed` | Read commands from a file |
+| `-E` (or `-r`) | Extended regex: `+ ? | ( )` work without backslashes |
+| `-s` | Treat each input file separately (so `$` and line numbers restart per file) |
+| `-z` | GNU: records are separated by NUL, not newline (the whole file becomes one "line") |
+
+#### Addresses (choosing lines)
+
+```bash
+sed -n '3p' f               # line 3
+sed -n '2,4p' f             # lines 2 to 4
+sed -n '$p' f               # last line
+sed -n '1~2p' f             # GNU: every 2nd line starting at 1 (odd lines)
+sed -n '0~3p' f             # GNU: every 3rd line
+sed -n '/error/p' f         # lines matching a regex
+sed -n '/start/,/end/p' f   # from a "start" line through the next "end" line
+sed -n '/foo/,+2p' f        # GNU: matching line plus the 2 lines after it
+sed -n '5,$p' f             # line 5 to the end
+sed '2,4!d' f               # ! negates: delete everything EXCEPT lines 2-4
+sed '/foo/!s/a/b/' f        # run the command only on lines NOT matching foo
+sed '/foo/s/a/b/g' f        # run s/// only on lines matching foo
+```
+
+> A range with a regex end (`/start/,/end/`) runs to the end of the file if "end" never appears.
+
+#### Common Commands
+
+| Command | What it does | Example |
+|---|---|---|
+| `p` | Print the line | `sed -n '/ERROR/p' f` |
+| `d` | Delete the line | `sed '/^#/d' f` |
+| `s` | Substitute | `sed 's/a/b/g' f` |
+| `a text` | Append a line after | `sed '/^\[main\]/a debug=true' f` |
+| `i text` | Insert a line before | `sed '1i #!/bin/bash' f` |
+| `c text` | Change (replace the whole line) | `sed '/^PORT=/c PORT=8080' f` |
+| `y/abc/xyz/` | Transliterate characters (like `tr`) | `sed 'y/abc/ABC/' f` |
+| `=` | Print the line number | `sed -n '/foo/=' f` |
+| `l` | Print showing hidden characters (`\t`, `$` at end of line) | `sed -n l f` |
+| `q` / `Q` | Quit (`q` prints the current line first, `Q` does not) | `sed '5q' f` |
+| `r file` | Read a file and insert its contents after the line | `sed '/marker/r extra.txt' f` |
+| `w file` | Write matching lines to a file | `sed -n '/ERROR/w errors.txt' f` |
+| `{ }` | Group several commands for one address | `sed -n '/foo/{=;p}' f` |
+
+> `a`, `i`, `c` with text on the same line (`1i text`) are GNU shortcuts. POSIX/BSD sed wants `1i\` followed by a newline and then the text.
+
+#### s Command: Flags and Special Characters
+
+```bash
+sed 's/a/b/' f              # first match on each line
+sed 's/a/b/g' f             # all matches
+sed 's/a/b/2' f             # only the 2nd match on each line
+sed 's/a/b/2g' f            # 2nd match and all after it
+sed 's/abc/X/I' f           # I = case-insensitive (GNU)
+sed -n 's/a/b/p' f          # p = print only lines where a replacement happened
+sed 's/a/b/w changed.txt' f # w = also write changed lines to a file
+sed 's|/usr/bin|/opt/bin|g' f     # any character can be the delimiter: no \/ escaping
+```
+
+```bash
+echo "hello world" | sed 's/world/[&]/'                 # hello [world]   & = the whole match
+echo "john@mail" | sed 's/\(.*\)@\(.*\)/\2 at \1/'      # mail at john    \1 \2 = capture groups
+echo "john@mail" | sed -E 's/(.*)@(.*)/\2 at \1/'       # same with -E: no backslashes
+echo "id=42;x" | sed -n 's/.*id=\([0-9]*\).*/\1/p'      # 42              extract part of a line
+```
+
+Case conversion (GNU):
+
+```bash
+echo "hello world" | sed 's/.*/\U&/'            # HELLO WORLD
+echo "HELLO" | sed 's/.*/\L&/'                  # hello
+echo "hello world" | sed 's/\b./\u&/g'          # Hello World   \u = next char uppercase
+```
+
+#### Everyday One-Liners
+
+```bash
+sed '1d' f                         # delete the first line (skip a header)
+sed '$d' f                         # delete the last line
+sed '/^$/d' f                      # delete blank lines
+sed '/^\s*#/d;/^\s*$/d' f          # delete comments and blank lines (config cleanup)
+sed 's/^[ \t]*//;s/[ \t]*$//' f    # trim leading and trailing whitespace
+sed 's/\r$//' f                    # remove Windows CR (dos2unix)
+sed -n '5{p;q}' f                  # print line 5 and stop reading (fast on big files)
+sed 10q f                          # first 10 lines (like head)
+sed -n '$=' f                      # count lines (like wc -l)
+sed G f                            # double-space the file
+sed 'n;d' f                        # delete every 2nd line
+sed = f | sed 'N;s/\n/\t/'         # number the lines
+sed '/foo/,/bar/d' f               # delete a block between two patterns
+sed -z 's/\n/,/g' f                # GNU: join all lines with commas (whole file is one record)
+sed ':a;N;$!ba;s/\n/,/g' f         # same join, portable loop version
+sed '$!N;s/\n/ /' f                # join lines in pairs
+sed -n '1!G;h;$p' f                # reverse line order (like tac)
+```
 
 ### tr — Translate Characters
 
@@ -4656,6 +4931,117 @@ cat /etc/hosts
 # 127.0.0.1   localhost
 # 192.168.1.5 webserver01
 ```
+
+### Modern Layout Note: /bin, /sbin, /lib Are Symlinks
+
+On current distros (Ubuntu, Debian 12+, Fedora, RHEL 8+), `/bin`, `/sbin`, and `/lib` are symlinks into `/usr`:
+
+```bash
+ls -ld /bin /sbin /lib
+# lrwxrwxrwx ... /bin -> usr/bin
+```
+
+### Important Files Inside Each Directory
+
+**/etc** (system configuration)
+
+| File | What it does |
+|---|---|
+| `passwd`, `shadow`, `group`, `gshadow` | User accounts, password hashes, groups |
+| `sudoers`, `sudoers.d/` | Who may use `sudo` (edit with `visudo`) |
+| `fstab` | Filesystems mounted at boot |
+| `hosts` | Static hostname-to-IP mappings |
+| `hostname` | This machine's name |
+| `resolv.conf` | DNS servers (often managed by systemd-resolved) |
+| `nsswitch.conf` | Lookup order for hosts, users, groups |
+| `os-release` | Distro name and version |
+| `ssh/sshd_config`, `ssh/ssh_config` | SSH server and client settings |
+| `crontab`, `cron.d/`, `cron.daily/` | System-wide scheduled jobs |
+| `profile`, `bash.bashrc` (`bashrc` on RHEL) | System-wide shell startup |
+| `environment` | System-wide environment variables (Debian/Ubuntu) |
+| `shells`, `services` | Valid login shells, service-name-to-port map |
+| `apt/sources.list`, `yum.repos.d/` | Package repositories |
+| `default/grub` | GRUB boot settings (then run `update-grub`) |
+| `systemd/system/` | Your own service unit files and overrides |
+| `issue`, `motd` | Banner before login, message after login |
+| `localtime`, `timezone` | System time zone |
+
+**/var** (data that changes)
+
+| Path | What it does |
+|---|---|
+| `log/` | Logs (`syslog`, `auth.log`, `nginx/`, `journal/`) |
+| `cache/` | Re-creatable cached data (e.g. downloaded `.deb` files in `apt/`) |
+| `lib/` | Persistent program state (`dpkg/` package database, `docker/`, `mysql/`) |
+| `spool/` | Queued jobs: cron tabs, mail, print |
+| `tmp/` | Temp files that **survive reboot** (`/tmp` is usually cleared) |
+| `www/` | Default web root on Debian/Ubuntu |
+
+**/proc and /sys** (virtual, generated by the kernel)
+
+| Path | What it shows |
+|---|---|
+| `/proc/cpuinfo`, `/proc/meminfo` | CPU and memory details |
+| `/proc/loadavg`, `/proc/uptime` | Load average, uptime in seconds |
+| `/proc/version`, `/proc/cmdline` | Kernel version, boot parameters |
+| `/proc/mounts` | Currently mounted filesystems |
+| `/proc/<PID>/` | Per-process info: `cmdline`, `status`, `environ`, `fd/`, `cwd`, `exe` |
+| `/proc/sys/` | Kernel settings you can change (`sysctl`) |
+| `/sys/class/net/`, `/sys/block/` | Network interfaces, disks |
+
+**/dev** (devices)
+
+| File | What it does |
+|---|---|
+| `null` | Discards everything written; reads as empty |
+| `zero` | Endless zero bytes |
+| `random`, `urandom` | Random bytes |
+| `tty`, `pts/` | Terminals |
+| `stdin`, `stdout`, `stderr` | Links to file descriptors 0, 1, 2 |
+| `sda`, `sda1`, `nvme0n1`, `loop0` | Disks, partitions, NVMe drives, loop devices |
+
+**/boot**
+
+| File | What it does |
+|---|---|
+| `vmlinuz-*` | Compressed Linux kernel |
+| `initrd.img-*` / `initramfs-*` | Temporary root filesystem used during boot |
+| `grub/grub.cfg` | Generated boot menu (don't edit by hand) |
+| `config-*`, `System.map-*` | Kernel build config and symbol map |
+| `efi/` | EFI system partition (UEFI systems) |
+
+**/usr**
+
+| Path | What it does |
+|---|---|
+| `bin/`, `sbin/` | Most user and admin commands |
+| `lib/` | Libraries for those commands |
+| `local/` | Software you installed manually (`make install` default) |
+| `share/` | Architecture-independent data: docs, man pages, icons |
+| `include/` | C/C++ header files |
+
+**A user's home directory** (hidden files start with `.`)
+
+| File | What it does |
+|---|---|
+| `.bashrc` | Aliases, prompt, functions for interactive shells |
+| `.bash_profile`, `.profile` | Run at login: environment variables |
+| `.bash_logout` | Runs when a login shell exits |
+| `.bash_history` | Saved command history |
+| `.ssh/authorized_keys` | Public keys allowed to log in as this user |
+| `.ssh/known_hosts` | Servers you have connected to before |
+| `.ssh/id_ed25519` | Your private key (permissions must be `600`) |
+| `.ssh/config` | Per-host SSH shortcuts |
+| `.config/`, `.local/`, `.cache/` | Per-user app settings, data, cache |
+| `.viminfo`, `.gitconfig` | Vim state, Git identity and settings |
+
+**Others**
+
+| Path | What it does |
+|---|---|
+| `/lost+found` | Files recovered by `fsck` (one per ext4 filesystem) |
+| `/run` | Runtime state since boot: PID files, sockets (`/run/user/<UID>`, `docker.sock`) |
+| `/tmp` | Temporary files, usually cleared on reboot |
 
 ### Quick Reference Table
 

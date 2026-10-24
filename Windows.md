@@ -13,6 +13,7 @@ A comprehensive guide to Windows for IT Support Engineers, System Administrators
 - [Users, Groups and Access](#users-groups-and-access)
 - [Searching and Text Processing](#searching-and-text-processing)
 - [Networking](#networking)
+- [LAN and Workgroup Networking](#lan-and-workgroup-networking)
 - [Archives and Compression](#archives-and-compression)
 - [Package and Software Management](#package-and-software-management)
 - [Disk, Partitioning and Storage](#disk-partitioning-and-storage)
@@ -23,14 +24,17 @@ A comprehensive guide to Windows for IT Support Engineers, System Administrators
 - [Registry](#registry)
 - [Windows Update and Servicing](#windows-update-and-servicing)
 - [Repair and Troubleshooting](#repair-and-troubleshooting)
+- [Common Windows Issues and Fixes](#common-windows-issues-and-fixes)
 - [Boot Process](#boot-process)
 - [Security Fundamentals](#security-fundamentals)
 - [Active Directory and Enterprise Management](#active-directory-and-enterprise-management)
+- [Windows Server Roles Quick Reference](#windows-server-roles-quick-reference)
 - [Remote Access and Administration](#remote-access-and-administration)
 - [Windows for Developers](#windows-for-developers)
 - [Virtualization and Containers](#virtualization-and-containers)
 - [Power, Printers and Peripherals](#power-printers-and-peripherals)
 - [Backup and Recovery](#backup-and-recovery)
+- [Installing, Deploying and Migrating Windows](#installing-deploying-and-migrating-windows)
 - [Error Codes and Stop Codes](#error-codes-and-stop-codes)
 - [Linux to Windows Command Mapping](#linux-to-windows-command-mapping)
 - [Scenario-Based Troubleshooting](#scenario-based-troubleshooting)
@@ -206,6 +210,205 @@ ftype txtfile             :: shows the command that opens it
 echo %PATHEXT%            :: .COM;.EXE;.BAT;.CMD;.VBS;.JS;.WSF;.MSC
 ```
 
+### Windows-Specific File Extensions Reference
+
+These extensions are meaningful to the OS itself (loader, installer, shell, servicing, boot). Common document and media types are intentionally left out.
+
+#### Executables, Libraries and Drivers
+
+| Extension | What It Is | Notes |
+|---|---|---|
+| `.exe` | Portable Executable (PE) program | `.dll`, `.sys`, `.scr`, `.cpl`, `.ocx` use the same PE format |
+| `.dll` | Dynamic Link Library | Shared code loaded at runtime; cannot be launched directly (`rundll32`, `regsvr32`) |
+| `.sys` | Kernel-mode driver | Lives in `System32\drivers`; a faulty one causes a BSOD |
+| `.scr` | Screen saver | An EXE in disguise; a common malware trick |
+| `.cpl` | Control Panel applet | A DLL: `control appwiz.cpl` |
+| `.ocx` | ActiveX / COM control | Register with `regsvr32` |
+| `.ax` | DirectShow filter | Media codec or filter |
+| `.msc` | MMC console | `services.msc`, `eventvwr.msc` |
+| `.efi` | UEFI application | `bootmgfw.efi`, `winload.efi` in the EFI System Partition |
+| `.mui` | Language resource file | In `en-US` subfolders next to the binary |
+| `.mof` | WMI class definition | Compiled with `mofcomp file.mof` |
+| `.manifest` | Application manifest | UAC level, DPI awareness, side-by-side dependencies |
+| `.com` | Legacy DOS executable | Still runs; also appears in `PATHEXT` |
+| `.drv` | Legacy driver library | 16-bit era |
+
+#### Installers, Packages and Images
+
+| Extension | What It Is | Notes |
+|---|---|---|
+| `.msi` | Windows Installer package | A database of install actions; run via `msiexec` |
+| `.msp` | Installer patch | Applies on top of an installed MSI |
+| `.mst` | Installer transform | Customizes an MSI (`TRANSFORMS=x.mst`) |
+| `.msm` | Merge module | Shared components bundled into MSIs |
+| `.msu` | Update standalone package | Installed with `wusa` |
+| `.cab` | Cabinet archive | Update and driver payloads |
+| `.msix`, `.msixbundle`, `.appx`, `.appxbundle` | Modern app packages | `Add-AppxPackage` |
+| `.appinstaller` | MSIX update-source descriptor | Enables auto-update of sideloaded MSIX |
+| `.inf` | Setup information file | Driver install (`pnputil /add-driver`) |
+| `.cat` | Security catalog | Digital signature for a driver package |
+| `.wim` | Windows Imaging file | `install.wim` and `boot.wim`; file-based, multi-image |
+| `.esd` | Compressed Windows image | Smaller than WIM, read-only style |
+| `.swm` | Split WIM | Needed to fit `install.wim` over 4 GB on FAT32 |
+| `.ppkg` | Provisioning package | Built with Windows Configuration Designer |
+| `.sdi` | System Deployment Image | `boot.sdi` for WinPE ramdisk boot |
+| `.iso` | Optical disc image | Double-click to mount |
+| `.vhd` / `.vhdx` | Virtual hard disk | Hyper-V, Disk Management, WSL (`ext4.vhdx`) |
+| `.avhdx` | Hyper-V checkpoint (differencing) disk | Do not delete manually |
+| `.vmcx` / `.vmrs` | Hyper-V VM configuration / runtime state | |
+| `.wsb` | Windows Sandbox configuration | Defines mapped folders, networking |
+
+#### Scripts and Shortcuts
+
+| Extension | What It Is | Notes |
+|---|---|---|
+| `.bat` / `.cmd` | Batch scripts | `.cmd` handles `ERRORLEVEL` slightly differently |
+| `.ps1` | PowerShell script | Blocked by default execution policy on clients |
+| `.psm1` / `.psd1` | PowerShell module / manifest | |
+| `.vbs` / `.vbe` / `.wsf` / `.js` | Windows Script Host scripts | Run by `wscript` / `cscript`; VBScript is deprecated |
+| `.hta` | HTML Application | Run by `mshta.exe`; heavily abused by malware |
+| `.reg` | Registry import file | Double-click merges it; never import unknown ones |
+| `.lnk` | Shell shortcut | Can carry arguments; used in phishing |
+| `.url` | Internet shortcut | |
+| `.library-ms` / `.search-ms` | Library / saved search | Can be abused to open remote paths |
+| `.rdp` | Remote Desktop connection file | Stores target, resolution, redirection settings |
+| `.appref-ms` | ClickOnce shortcut | |
+
+#### Configuration, Policy and Databases
+
+| Extension | What It Is | Notes |
+|---|---|---|
+| `.ini` | Legacy configuration | `desktop.ini` customizes folder appearance |
+| `.config` | .NET configuration | `web.config`, `app.exe.config`, `machine.config` |
+| `.pol` | Group Policy registry policy | `Registry.pol` in SYSVOL / local policy folder |
+| `.admx` / `.adml` | Group Policy templates / language | `C:\Windows\PolicyDefinitions` or the AD Central Store |
+| `.sdb` | App compatibility shim database | Managed with Compatibility Administrator |
+| `.dit` | Active Directory database | `C:\Windows\NTDS\ntds.dit` on domain controllers |
+| `.edb` | Extensible Storage Engine DB | `Windows.edb` is the Search index |
+| `.dat` | Registry hive or generic data | `NTUSER.DAT`, `UsrClass.dat` |
+| `.LOG1` / `.LOG2` / `.blf` / `.regtrans-ms` | Registry transaction logs | Next to hive files |
+| (no extension) | Registry hives | `SAM`, `SYSTEM`, `SOFTWARE`, `SECURITY`, `DEFAULT`; BCD store is `BCD` |
+
+#### Logs, Dumps and Diagnostics
+
+| Extension | What It Is | Notes |
+|---|---|---|
+| `.evtx` | Event Viewer log | Legacy `.evt`; export with `wevtutil epl` |
+| `.etl` | Event Trace Log | WPR, `netsh trace`, `pktmon`, Windows Update traces |
+| `.dmp` / `.mdmp` / `.hdmp` | Memory / crash dump | `C:\Windows\Minidump`, `MEMORY.DMP`, ProcDump |
+| `.wer` | Windows Error Reporting report | `C:\ProgramData\Microsoft\Windows\WER` |
+| `.pf` | Prefetch file | Evidence that a program ran (forensics) |
+| `.blg` | Performance Monitor log | Binary counter log |
+| `.pml` | Process Monitor log | Sysinternals capture |
+
+#### Certificates and Security
+
+| Extension | What It Is | Notes |
+|---|---|---|
+| `.cer` / `.crt` | Public certificate | DER or Base64 encoded |
+| `.pfx` / `.p12` | Certificate **with private key** | Password protected; treat as a secret |
+| `.p7b` | Certificate chain (no private key) | |
+| `.csr` | Certificate signing request | |
+| `.crl` | Certificate revocation list | |
+
+#### Printing, Help and UI
+
+| Extension | What It Is | Notes |
+|---|---|---|
+| `.spl` / `.shd` | Print spool data / shadow file | `spool\PRINTERS`; delete when clearing a stuck queue |
+| `.xps` / `.oxps` | XML Paper Specification | Windows-native print format |
+| `.chm` | Compiled HTML Help | Right-click > Properties > Unblock if it will not display |
+| `.ttf` / `.otf` / `.ttc` / `.fon` | Fonts | `C:\Windows\Fonts` |
+| `.ico` / `.cur` / `.ani` | Icons and cursors | |
+| `.theme` | Desktop theme | |
+
+#### Developer Artifacts
+
+| Extension | What It Is |
+|---|---|
+| `.sln`, `.csproj`, `.vcxproj` | Visual Studio solution and projects |
+| `.pdb` | Program database (debug symbols); WinDbg needs it for readable stacks |
+| `.lib` / `.obj` / `.exp` | Import libraries and compiler output |
+| `.nupkg` | NuGet package |
+| `.resx` / `.xaml` | .NET resources and UI markup |
+| `.snk` | Strong name key |
+
+#### Risky Extensions to Block or Inspect
+
+```text
+.exe .scr .com .pif .bat .cmd .vbs .vbe .js .jse .wsf .hta .ps1 .lnk .cpl .msi .msp .reg .dll .jar .iso .img .vhd .chm
+```
+
+- Double extensions: `invoice.pdf.exe` (Explorer hides the real one unless extensions are shown).
+- Right-to-left override characters can make `exe` look like `fdp.` in a name.
+- Archives (`.zip`, `.iso`) may or may not carry the **Mark of the Web**; check with `dir /r` and `Get-Item file -Stream *`.
+- Block at the email gateway and with AppLocker or WDAC, not only on user training.
+
+#### Useful File Type Commands
+
+```cmd
+assoc .ps1                                   :: extension to file type
+ftype Microsoft.PowerShellScript.1           :: file type to open command
+dism /Online /Export-DefaultAppAssociations:C:\apps.xml
+dism /Online /Import-DefaultAppAssociations:C:\apps.xml
+regsvr32 /s mylib.dll                        :: register a COM DLL silently
+regsvr32 /u mylib.dll                        :: unregister
+rundll32 user32.dll,LockWorkStation          :: call a DLL export
+rundll32 shell32.dll,Control_RunDLL desk.cpl
+tasklist /m kernel32.dll                     :: processes that loaded a DLL
+tasklist /m /fi "IMAGENAME eq chrome.exe"    :: DLLs loaded by a process
+```
+
+```powershell
+Get-AuthenticodeSignature C:\Windows\System32\notepad.exe | Select-Object Status, SignerCertificate
+(Get-Item .\app.exe).VersionInfo | Format-List *
+```
+
+Tools for inspecting binaries: Sysinternals `sigcheck -a file.exe` (signature, hashes, version) and `listdlls`, the open-source **Dependencies** tool (modern Dependency Walker), and `dumpbin /dependents file.exe` (Visual Studio Developer Prompt).
+
+#### DLL Essentials
+
+A **DLL** is code shared between programs. Most "missing DLL" errors mean a **runtime is missing**, not that the single named file is broken.
+
+| Error | Meaning | Typical Fix |
+|---|---|---|
+| Win32 `126` "The specified module could not be found" | The DLL, **or one of its dependencies**, was not found | Check the PATH and install folder; inspect with Dependencies or Process Monitor (`NAME NOT FOUND`) |
+| Win32 `127` "The specified procedure could not be found" | Wrong DLL version (the function does not exist in it) | Install the correct app or runtime version; look for an old copy earlier in the search order |
+| Win32 `193` "not a valid Win32 application" | 32-bit and 64-bit mismatch, or a corrupt file | Use the matching architecture |
+| Win32 `14001` "side-by-side configuration is incorrect" | Missing or bad manifest or runtime | `sxstrace trace -logfile:C:\sxs.etl`, then `sxstrace parse -logfile:C:\sxs.etl -outfile:C:\sxs.txt`; install the VC++ runtime |
+| `0xC000007B` | Bad image (architecture mix) | Install both x86 and x64 runtimes |
+| `0xC0000142` | DLL initialization failed | Reinstall app, check antivirus, check dependent DLLs |
+
+| Missing File | Install |
+|---|---|
+| `VCRUNTIME140.dll`, `MSVCP140.dll`, `vcruntime140_1.dll` | Visual C++ Redistributable 2015-2022 (the x64 **and** x86 packages) |
+| `MSVCR100.dll` / `MSVCP100.dll` | Visual C++ 2010 Redistributable |
+| `MSVCR120.dll` | Visual C++ 2013 Redistributable |
+| `api-ms-win-crt-*.dll` | Universal CRT (included with the VC++ 2015-2022 redistributable and current Windows) |
+| `d3dx9_43.dll`, `xinput1_3.dll` | DirectX End-User Runtime (legacy games and tools) |
+| `mscoree.dll` / .NET errors | Required .NET Framework or .NET runtime |
+
+```cmd
+:: .NET Framework 4.x release key (528040 or higher = 4.8 or later)
+reg query "HKLM\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full" /v Release
+:: Modern .NET runtimes install side by side
+dotnet --list-runtimes
+dotnet --list-sdks
+:: Legacy .NET 3.5 (includes 2.0 and 3.0) is a Windows feature
+DISM /Online /Enable-Feature /FeatureName:NetFx3 /All
+```
+
+**DLL search order (simplified, for unpackaged desktop apps):** loaded modules and Known DLLs, then the **application's directory**, then `System32`, then the Windows directory, then the current directory, then `PATH`. The KnownDLLs list is under `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs`.
+
+> **Security: DLL hijacking.** An attacker (or a buggy installer) drops a malicious DLL with the expected name where the app looks first. Writable folders in `PATH` and apps installed in user-writable folders are classic risks. Use Process Monitor with `Result is NAME NOT FOUND` and `Path ends with .dll` to see what an app searches for.
+
+| Concept | Meaning |
+|---|---|
+| DLL Hell | Several apps need different versions of the same DLL; solved by side-by-side assemblies (WinSxS) and private copies |
+| Side-by-side (SxS) | Manifest-driven loading of the exact required version from `C:\Windows\WinSxS` |
+| `System32` vs `SysWOW64` | 64-bit vs 32-bit system DLLs (see WOW64 below) |
+| Do not copy DLLs from random sites | Install the official runtime instead; downloaded DLLs are frequently malware |
+
 ### Line Endings and Encoding
 
 | Item | Windows | Linux/macOS |
@@ -300,6 +503,29 @@ explorer shell:common startup    :: all-users Startup folder
 explorer shell:appdata           :: Roaming AppData
 explorer shell:sendto            :: Send To menu items
 ```
+
+### WOW64: 32-bit Apps on 64-bit Windows
+
+32-bit processes run in the **WOW64** compatibility layer. Windows silently redirects their view of files and the registry.
+
+| Item | 64-bit Process Sees | 32-bit Process Sees |
+|---|---|---|
+| `C:\Windows\System32` | The real 64-bit folder | Redirected to `C:\Windows\SysWOW64` |
+| `C:\Program Files` | 64-bit apps | Redirected to `C:\Program Files (x86)` |
+| `HKLM\SOFTWARE\Vendor` | Native key | Redirected to `HKLM\SOFTWARE\WOW6432Node\Vendor` |
+
+```cmd
+:: A 32-bit process (old installer, 32-bit cmd, some build tools) reaches the REAL System32 through:
+C:\Windows\Sysnative\
+:: Run the 64-bit tool explicitly from a 32-bit shell
+%windir%\Sysnative\cmd.exe
+%windir%\Sysnative\WindowsPowerShell\v1.0\powershell.exe
+:: Query the 32-bit and 64-bit registry views explicitly
+reg query "HKLM\SOFTWARE\Vendor" /reg:64
+reg query "HKLM\SOFTWARE\Vendor" /reg:32
+```
+
+**Symptom:** a script works in one shell but not another, or an installer "cannot find" a file that clearly exists in `System32`. The cause is usually a 32-bit host process. `Sysnative` only exists for 32-bit processes; it does not appear in Explorer.
 
 ### Settings, Control Panel and MMC Consoles
 
@@ -1511,6 +1737,38 @@ reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall /s /v Display
 appwiz.cpl
 ```
 
+### Windows Installer (MSI) Exit Codes and Troubleshooting
+
+```cmd
+msiexec /i app.msi /qn /norestart /L*v C:\Temp\app-install.log
+echo %ERRORLEVEL%
+```
+
+| Exit Code | Meaning | Action |
+|---|---|---|
+| `0` | Success | |
+| `1601` | Windows Installer service could not be accessed | Check the `msiserver` service; `msiexec /unregister` then `msiexec /regserver` |
+| `1602` | User cancelled | |
+| `1603` | Fatal error during installation | Open the log and search for `Return value 3`; read the lines **above** it |
+| `1605` | Product is not installed (uninstall or patch target missing) | Check the product code; clean up manually |
+| `1618` | Another installation is already in progress | Wait, check for stray `msiexec.exe` processes, or reboot |
+| `1619` / `1620` | Package could not be opened | Corrupt download, path or permission problem, wrong file |
+| `1625` | Installation blocked by system policy | Check AppLocker, WDAC, or the Windows Installer policy |
+| `1638` | Another version of this product is already installed | Uninstall it, or use an upgrade package |
+| `1641` | Success, reboot initiated | |
+| `3010` | Success, **reboot required** | Treat as success in deployment tools |
+
+Common causes of `1603`: leftover files from a previous install, missing prerequisites (.NET, VC++), a locked file (antivirus, running app), a custom action running as a user without rights, or a path that is too long. Run the installer elevated, from a local path (not a network share), with antivirus temporarily excluded if the log shows blocked writes.
+
+| Standard MSI Property | Effect |
+|---|---|
+| `ALLUSERS=1` | Install per-machine |
+| `INSTALLDIR="C:\Apps\X"` | Custom path (property name depends on the vendor) |
+| `REBOOT=ReallySuppress` | Never reboot automatically |
+| `/qn` / `/qb` | No UI / basic progress UI |
+
+> Do not delete `C:\Windows\Installer`. It holds cached MSIs and patches that the uninstall and repair paths depend on. To find a product's uninstall string without `Win32_Product`, read the `Uninstall` registry keys or use `winget list`.
+
 ### Windows Features and Capabilities
 
 ```cmd
@@ -1793,6 +2051,72 @@ Free Microsoft tools that every Windows administrator uses.
 ```cmd
 winget install Microsoft.Sysinternals.Suite
 ```
+
+### Advanced Diagnostics Workflow
+
+#### Process Monitor (Procmon)
+
+Use it when an application fails, hangs, or cannot find something.
+
+```text
+1. Run Procmon as administrator, then Ctrl+E (stop) and Ctrl+X (clear).
+2. Filter: Process Name is app.exe  (Filter > Filter... or Ctrl+L).
+3. Start capture (Ctrl+E), reproduce the problem, stop capture.
+4. Add filter: Result is not SUCCESS, then scan what remains.
+5. Right-click a suspicious line > Properties > Stack to see the calling module.
+```
+
+| Result in Procmon | Meaning |
+|---|---|
+| `NAME NOT FOUND` on a `.dll` path | App searched for a file that is absent (often normal; important if it is the final attempt) |
+| `ACCESS DENIED` | Permission problem; shows the exact path and user |
+| `PATH NOT FOUND` | Wrong or missing directory or mapped drive |
+| `SHARING VIOLATION` | Another process has the file open |
+| `BUFFER OVERFLOW` | Usually benign (a size query) |
+
+Boot-time issues: **Options > Enable Boot Logging**, reboot, then open the log.
+
+#### Process Explorer and Autoruns
+
+- Process Explorer: **Options > Verify Image Signatures** and **VirusTotal** check; `Ctrl+F` finds which process holds a handle or DLL; the process tree shows who launched what (for example `winword.exe` spawning `powershell.exe` is suspicious).
+- Autoruns: tick **Hide Microsoft Entries** and **Verify Code Signatures**, then review Logon, Scheduled Tasks, Services, Drivers, Image Hijacks, and WMI tabs.
+
+#### Performance Traces
+
+```cmd
+wpr -start GeneralProfile -filemode
+:: ...reproduce the slowness...
+wpr -stop C:\trace.etl
+```
+
+Open the `.etl` in **Windows Performance Analyzer** (Microsoft Store) to see CPU usage by stack, disk I/O, DPC/ISR time, and boot phases. WPR can also trace boot and shutdown performance.
+
+#### WMI Health
+
+```cmd
+winmgmt /verifyrepository
+winmgmt /salvagerepository
+winmgmt /resetrepository          :: last resort; can break software that registered WMI classes
+```
+
+Symptoms of a broken WMI repository: `Get-CimInstance` hangs or returns `0x80041002`/`Invalid class`, high `WmiPrvSE.exe` usage, and failing management agents. The log `Microsoft-Windows-WMI-Activity/Operational` (Events 5857 to 5861) shows which provider or caller is responsible.
+
+#### Collect a Diagnostic Bundle for a Support Case
+
+```cmd
+mkdir C:\Diag
+systeminfo > C:\Diag\systeminfo.txt
+ipconfig /all > C:\Diag\ipconfig.txt
+driverquery /v /fo csv > C:\Diag\drivers.csv
+gpresult /h C:\Diag\gpresult.html /f
+msinfo32 /report C:\Diag\msinfo32.txt
+dxdiag /t C:\Diag\dxdiag.txt
+wevtutil epl System C:\Diag\System.evtx
+wevtutil epl Application C:\Diag\Application.evtx
+powercfg /energy /output C:\Diag\energy.html
+```
+
+Add the Reliability Monitor screenshot, the exact error text, and the time it happened. Check that the bundle contains no passwords or personal data before sending it outside the organization.
 
 ---
 
@@ -2501,6 +2825,135 @@ Fix:     1. Sign in as another admin
 
 ---
 
+## Common Windows Issues and Fixes
+
+Quick playbook for problems IT support sees every week. Changes are listed least invasive first.
+
+### Shell, Start Menu and Search
+
+| Symptom | Fix |
+|---|---|
+| Start menu, taskbar, or Settings will not open | Restart `explorer.exe`; run `sfc /scannow`; re-register shell packages (below); test with a new user profile |
+| Search returns nothing or is slow | `Restart-Service WSearch`; Indexing Options > Advanced > **Rebuild**; run the Search troubleshooter |
+| Microsoft Store will not open or download | `wsreset.exe`; re-register the Store (below); check date and time and proxy |
+| Black screen with a cursor after sign-in | `Ctrl+Shift+Esc` > Run new task > `explorer.exe`; check `Shell` and `Userinit` (below) |
+| Default apps keep resetting | Remove conflicting policy; set per-user defaults; check an imported default-association XML |
+
+```powershell
+# Re-register shell components (run as the affected user or admin)
+Get-AppxPackage -AllUsers Microsoft.Windows.StartMenuExperienceHost | ForEach-Object { Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\AppXManifest.xml" }
+Get-AppxPackage -AllUsers Microsoft.WindowsStore | ForEach-Object { Add-AppxPackage -DisableDevelopmentMode -Register "$($_.InstallLocation)\AppXManifest.xml" }
+```
+
+```cmd
+:: Correct values for a black-screen-after-login check
+reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v Shell      :: explorer.exe
+reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v Userinit   :: C:\Windows\system32\userinit.exe,
+```
+
+### High CPU, Memory or Disk: What Is That Process?
+
+| Process | What It Is | What to Do |
+|---|---|---|
+| `MsMpEng.exe` (Antimalware Service Executable) | Defender scanning | Normal during scans or after updates; check for scan loops, scope exclusions carefully for build folders |
+| `TiWorker.exe` / `TrustedInstaller.exe` | Windows servicing (updates, cleanup) | Let it finish; if stuck, `DISM /RestoreHealth`, reset update components |
+| `SearchIndexer.exe` | Search indexing | Reduce indexed locations, rebuild index |
+| `System` (PID 4) | Kernel and drivers | Investigate with WPR/WPA or Process Monitor; suspect storage and network drivers |
+| `System interrupts` | Hardware interrupt and DPC time | Sustained high CPU points to a faulty device or driver; test with LatencyMon, unplug USB devices |
+| `WmiPrvSE.exe` | WMI provider host | Find the caller in WMI-Activity log; `winmgmt /verifyrepository` |
+| `svchost.exe` | Service host | Identify with `tasklist /svc`; or `Get-CimInstance Win32_Service \| Where ProcessId -eq <PID>` |
+| `explorer.exe` | Shell | Faulty shell extension (use ShellExView), huge network folders, OneDrive |
+| `dwm.exe` | Desktop compositor | GPU driver or display issue |
+| `CompatTelRunner.exe` | Compatibility telemetry | Usually brief after updates |
+| `OneDrive.exe` | Sync client | Initial sync or a huge folder; pause and review excluded folders |
+
+Memory that grows until the system slows: check **Non-paged pool** in Task Manager > Performance > Memory and RAMMap. A growing pool usually means a leaking driver (look at `poolmon`, then update or remove the driver).
+
+### Network Quick Fixes
+
+| Symptom | Fix |
+|---|---|
+| "No internet, secured" / limited connectivity | `ipconfig /release && ipconfig /renew`, `ipconfig /flushdns`, forget and reconnect the Wi-Fi, update the NIC driver |
+| Everything network-related broke after a VPN or security tool | `netsh winsock reset`, `netsh int ip reset`, restart; remove stale virtual adapters |
+| Network reset needed | Settings > Network and internet > Advanced network settings > **Network reset** |
+| Last-resort adapter reset | `netcfg -d` then reboot (removes and reinstalls adapters and loses static IP and VPN adapter settings) |
+| Only one site fails with a certificate error | Check system date and time, proxy, and TLS inspection software |
+| IP conflict | `arp -a`, find the duplicate MAC; fix by DHCP reservation |
+
+### Printing Errors
+
+| Error | Cause | Fix |
+|---|---|---|
+| `0x0000011b` | RPC authentication hardening after the 2021 print security updates | Update both print server and client; prefer connecting via a TCP/IP port. Temporary, **reduces security**: set `RpcAuthnLevelPrivacyEnabled` to `0` under `HKLM\SYSTEM\CurrentControlSet\Control\Print` on the print server (see Microsoft KB5005652) |
+| `0x00000709` | Cannot set the default printer | Turn off "Let Windows manage my default printer"; `reg add "HKCU\Software\Microsoft\Windows NT\CurrentVersion\Windows" /v LegacyDefaultPrinterMode /t REG_DWORD /d 1 /f` |
+| `0x00000bcb` | Driver install blocked or Point-and-Print issue | Install the driver locally, then add the printer on a TCP/IP port; check Point-and-Print policies |
+| `0x0000007c` | Driver mismatch or corruption | Remove the printer and driver (`printui /s /t2`), install the OEM driver |
+| Job stuck in queue | Corrupt spool file | Stop `spooler`, delete `spool\PRINTERS\*`, start `spooler` |
+
+### Services Will Not Start
+
+| Error | Meaning | Fix |
+|---|---|---|
+| `1053` | Service did not respond to the start request in time | Check the application log; dependency or slow startup; increase `ServicesPipeTimeout` only if justified |
+| `1058` | Service disabled or no enabled devices | `sc config svc start= demand` |
+| `1067` | Process terminated unexpectedly | Application log (Event 1000, 7034), check the executable and dependencies |
+| `1068` | Dependency service or group failed to start | `sc qc svc` then `sc enumdepend svc`; start dependencies first |
+| `1069` | Logon failure | Service account password changed or account locked; fix in `services.msc` > Log On |
+
+### Activation Errors
+
+| Code | Meaning | Fix |
+|---|---|---|
+| `0xC004F074` | KMS host unreachable | Check DNS SRV `_vlmcs._tcp`, firewall to TCP 1688, then `slmgr /ato` |
+| `0x8007232B` | DNS name does not exist (KMS discovery) | Fix the SRV record or set `slmgr /skms host:1688` |
+| `0xC004F050` | Invalid product key | Verify the key and edition |
+| `0xC004C003` | Key blocked | Replace the key; contact the licensing owner |
+| `0x803F7001` | No valid digital license found | Link the license to the Microsoft account; reactivate after hardware changes |
+
+### Remote Desktop Errors
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Remote Desktop can't connect" | Disabled, firewall, wrong IP/name, service stopped | `Test-NetConnection host -Port 3389`; enable RDP; start `TermService`; firewall rule |
+| "Your credentials did not work" | Wrong account, not in **Remote Desktop Users**, NLA rejecting, stale saved credentials | Add user to group; `cmdkey /delete:host`; use `DOMAIN\user` |
+| "The connection was denied because the user account is not authorized for remote login" | Missing "Allow log on through Remote Desktop Services" right | `secpol.msc` > User Rights Assignment; or Remote Desktop Users membership |
+| CredSSP "encryption oracle remediation" | One side is unpatched | Patch both client and server (do not weaken the policy permanently) |
+| Session limit or stuck session | Disconnected sessions hold the slot | `query session /server:host`, `logoff <id> /server:host` or `reset session <id>` |
+| Slow, laggy RDP | Network, high colour depth, GPU/codecs | Lower experience settings, check packet loss with `pathping`, update graphics drivers |
+
+### Disk Space Mysteries
+
+| Item | Explanation | Action |
+|---|---|---|
+| `WinSxS` looks huge | Hard links make Explorer overstate its size | `DISM /Online /Cleanup-Image /AnalyzeComponentStore`, then `StartComponentCleanup`; never delete it manually |
+| `System Volume Information` | Restore points and shadow copies | `vssadmin list shadowstorage`; resize with `vssadmin resize shadowstorage` |
+| `hiberfil.sys` / `pagefile.sys` | Hibernation and virtual memory | `powercfg /h off` removes hibernation (also disables Fast Startup); size the pagefile in `sysdm.cpl` |
+| `C:\Windows\Installer` | Cached MSI and patches | **Do not delete** |
+| `C:\Windows\SoftwareDistribution\Download` | Update downloads | Safe to clear after stopping `wuauserv` and `bits` |
+| Unknown usage | Hidden or per-user data | WinDirStat or TreeSize; include `AppData`, `ProgramData`, and Docker/WSL virtual disks |
+
+### Access Problems Even as Administrator
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Access is denied" on system files | `TrustedInstaller` owns them | Do not take ownership casually; use `takeown` and `icacls` only if you must, then restore ownership |
+| Elevated prompt cannot see mapped drives | Elevated token uses a different logon session | Map the drive in the elevated session, or set `EnableLinkedConnections` = `1` (DWORD) under `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System` and reboot |
+| Cannot delete a file named `con`, `aux`, or one with a trailing dot or space | Reserved or illegal Win32 names | `del "\\?\C:\path\con"` or `rd /s /q "\\?\C:\path\name."` |
+| Cannot write to USB or disk ("write protected") | Read-only attribute or physical switch | `diskpart` > `select disk N` > `attributes disk clear readonly` |
+| Folder changes blocked unexpectedly | Defender **Controlled Folder Access** | Check Windows Security > Ransomware protection and protection history |
+| Windows Hello PIN fails with `0x80090016` ("Keyset does not exist") | Corrupt NGC container | Remove and re-create the PIN. As a last resort, after `takeown` and `icacls`, clear `C:\Windows\ServiceProfiles\LocalService\AppData\Local\Microsoft\NGC` (this resets Hello PINs for **all** users on the device) |
+
+### Audio, Bluetooth and Peripherals
+
+| Symptom | Fix |
+|---|---|
+| No sound | Check default device (`mmsys.cpl`); restart `Audiosrv` and `AudioEndpointBuilder`; disable enhancements and exclusive mode; reinstall the driver |
+| Bluetooth device will not pair | Remove and re-pair; restart `bthserv`; update the adapter driver; disable USB selective suspend |
+| USB device keeps disconnecting | Another port, no hub, disable selective suspend, update chipset drivers |
+| External monitor not detected | `Win+P`, `Win+Ctrl+Shift+B`, update GPU driver, change cable and port |
+
+---
+
 ## Boot Process
 
 ### Complete Boot Flow
@@ -2761,6 +3214,92 @@ Set-ADAccountPassword -Identity jsmith -Reset
 | `sysprep /generalize /oobe /shutdown` | Prepare a reference image |
 | Unattend answer files | Automate setup (`unattend.xml`) |
 | DISM image commands | Capture, apply, and service `.wim` images |
+
+---
+
+## Windows Server Roles Quick Reference
+
+Roles and features most IT support engineers meet. Run from an elevated PowerShell on the server.
+
+| Role | Purpose | Install |
+|---|---|---|
+| AD DS | Directory and authentication | `Install-WindowsFeature AD-Domain-Services -IncludeManagementTools` |
+| DNS | Name resolution (required by AD) | `Install-WindowsFeature DNS -IncludeManagementTools` |
+| DHCP | Automatic IP assignment | `Install-WindowsFeature DHCP -IncludeManagementTools` |
+| File Server / FSRM / DFS | Shares, quotas, namespaces | `Install-WindowsFeature FS-FileServer, FS-Resource-Manager, FS-DFS-Namespace` |
+| Print Server | Central printers | `Install-WindowsFeature Print-Server` |
+| IIS (Web Server) | Websites and web apps | `Install-WindowsFeature Web-Server -IncludeManagementTools` |
+| Hyper-V | Virtualization | `Install-WindowsFeature Hyper-V -IncludeManagementTools -Restart` |
+| Remote Desktop Services | Session hosts and gateway | Installed through Server Manager roles |
+
+```powershell
+Get-WindowsFeature | Where-Object Installed
+Get-WindowsFeature *DHCP*
+```
+
+**Server Core** (no desktop) is the recommended install for infrastructure roles. Manage it with `sconfig`, Windows Admin Center, RSAT, or PowerShell remoting.
+
+### DNS Server
+
+```powershell
+Add-DnsServerPrimaryZone -ZoneName "corp.local" -ReplicationScope Domain          # AD-integrated zone
+Add-DnsServerResourceRecordA -Name "srv01" -ZoneName "corp.local" -IPv4Address "10.0.0.10"
+Add-DnsServerResourceRecordCName -Name "files" -HostNameAlias "srv01.corp.local" -ZoneName "corp.local"
+Add-DnsServerForwarder -IPAddress 1.1.1.1
+Get-DnsServerResourceRecord -ZoneName "corp.local"
+Clear-DnsServerCache
+```
+
+Clients must use the **internal** DNS server (not a public one) to find domain controllers. This is the cause of most domain-join failures.
+
+### DHCP Server
+
+```powershell
+Add-DhcpServerv4Scope -Name "LAN" -StartRange 192.168.1.100 -EndRange 192.168.1.199 -SubnetMask 255.255.255.0 -State Active
+Set-DhcpServerv4OptionValue -ScopeId 192.168.1.0 -Router 192.168.1.1 -DnsServer 192.168.1.2 -DnsDomain corp.local
+Add-DhcpServerv4Reservation -ScopeId 192.168.1.0 -IPAddress 192.168.1.30 -ClientId "AA-BB-CC-DD-EE-FF" -Description "Printer"
+Add-DhcpServerInDC                            # authorize the server in AD (required in a domain)
+Get-DhcpServerv4Lease -ScopeId 192.168.1.0
+```
+
+Only one DHCP server should serve a subnet. A rogue router with DHCP enabled is a classic cause of "wrong IP or gateway on some PCs".
+
+### IIS Basics
+
+```cmd
+%windir%\system32\inetsrv\appcmd list site
+%windir%\system32\inetsrv\appcmd list apppool
+%windir%\system32\inetsrv\appcmd recycle apppool /apppool.name:"DefaultAppPool"
+iisreset
+```
+
+| IIS Error | Meaning |
+|---|---|
+| 401 | Authentication failed or missing |
+| 403 | Forbidden: permissions on the folder or directory browsing disabled |
+| 404 | Not found: wrong path or missing handler/MIME type |
+| 500 | Application error: check Failed Request Tracing and the Application log |
+| 503 | Application pool stopped: check identity, rapid-fail protection |
+
+Logs: `C:\inetpub\logs\LogFiles`. App pool identity (`IIS AppPool\<name>`) needs NTFS rights on the site folder.
+
+### Domain Controller Health
+
+```cmd
+dcdiag /q                           :: show only failures
+dcdiag /test:dns /v
+repadmin /replsummary               :: replication health overview
+repadmin /showrepl                  :: per-partner status and last errors
+repadmin /syncall /AdeP             :: force replication
+nltest /dclist:corp.local
+netdom query fsmo                   :: who holds the FSMO roles
+```
+
+```powershell
+Get-ADDomainController -Filter * | Select Name, IPv4Address, IsGlobalCatalog, OperatingSystem
+```
+
+Typical causes of replication failures: DNS misconfiguration, time skew over 5 minutes, blocked ports (TCP 135, 389, 445, 88, dynamic RPC), and a long-offline DC (lingering objects; do not reconnect a DC that was offline beyond the tombstone lifetime without guidance).
 
 ---
 
@@ -3140,6 +3679,93 @@ Get-ComputerRestorePoint
 ### Test Restores
 
 A backup that has never been restored is unverified. Schedule restore tests and record Recovery Time (RTO) and Recovery Point (RPO).
+
+---
+
+## Installing, Deploying and Migrating Windows
+
+### Getting Installation Media
+
+- Download the ISO or the Media Creation Tool only from Microsoft; verify the hash when one is published: `Get-FileHash .\Win11.iso -Algorithm SHA256`.
+- Create a bootable USB with the Media Creation Tool, Rufus, or manually (below).
+- Check which editions an image holds: `DISM /Get-WimInfo /WimFile:D:\sources\install.wim`.
+
+### Manual Bootable USB (UEFI/GPT)
+
+> `clean` erases the selected disk. Run `list disk` and confirm by size that you picked the USB.
+
+```cmd
+diskpart
+list disk
+select disk 2
+clean
+convert gpt
+create partition primary
+format fs=fat32 quick label=WINSETUP
+assign
+exit
+```
+
+Copy the ISO contents to the USB (mount the ISO, then `robocopy D:\ E:\ /E`).
+
+If `install.wim` is larger than 4 GB (FAT32 file limit), split it:
+
+```cmd
+DISM /Split-Image /ImageFile:D:\sources\install.wim /SWMFile:E:\sources\install.swm /FileSize:3800
+```
+
+(Copy everything **except** `install.wim`, then run the split into `E:\sources`.)
+
+### During Setup
+
+| Key | Use |
+|---|---|
+| `Shift+F10` | Open a command prompt (diskpart, driver loading, logs) |
+| `F2` / `Del` / `F12` (varies) | Firmware setup and boot menu |
+| "Load driver" | Add a storage driver when no disk is listed (Intel RST/VMD, some RAID/NVMe controllers) |
+
+Setup logs: `C:\$WINDOWS.~BT\Sources\Panther` (during a failed upgrade) and `C:\Windows\Panther`.
+
+### In-Place Upgrade (Repair Install)
+
+Run `setup.exe` from a mounted ISO while signed in, choose **Keep personal files and apps**. It repairs deep OS corruption without a reinstall and is the best step after `DISM` and `sfc` fail. Enterprise deployments use `setup.exe /auto upgrade` with a configuration file or Configuration Manager task sequences.
+
+### Before Reimaging or Replacing a PC
+
+| Item | How |
+|---|---|
+| BitLocker recovery key | `manage-bde -protectors -get C:`; confirm it is backed up |
+| User files | OneDrive Known Folder Move, `robocopy`, or USMT |
+| Installed software list | `winget export -o apps.json`; note licenses |
+| Saved Wi-Fi networks | `netsh wlan export profile folder=C:\wifi key=clear` (contains passwords; protect and delete afterwards) |
+| Printers and mapped drives | `Get-Printer`, `net use` |
+| Certificates | Export personal `.pfx` files with their private keys if needed |
+| Browser profiles and passwords | Browser sync or export |
+| Developer data | `.ssh`, `.gitconfig`, `.aws`, `.kube`, local databases, WSL (`wsl --export`) |
+| Email and app data | `%APPDATA%`, application-specific export tools |
+
+### USMT (User State Migration Tool)
+
+Part of the Windows ADK; moves user profiles and settings between PCs in bulk.
+
+```cmd
+scanstate C:\MigStore /i:migdocs.xml /i:migapp.xml /o /c /v:5 /l:C:\scan.log
+loadstate C:\MigStore /i:migdocs.xml /i:migapp.xml /c /v:5 /l:C:\load.log
+```
+
+### Post-Install Checklist
+
+```text
+[ ] Install all Windows updates, then OEM drivers and firmware
+[ ] Rename the PC (Rename-Computer) and set the time zone (tzutil /s "India Standard Time")
+[ ] Join the domain or Entra ID; apply policies (gpupdate /force)
+[ ] Enable BitLocker and back up the recovery key to AD/Entra ID
+[ ] Configure the local administrator (LAPS) and remove unneeded admins
+[ ] Confirm Defender, firewall, and update settings
+[ ] Install required software (winget import -i apps.json)
+[ ] Map drives and printers; test the network and VPN
+[ ] Create a restore point and document the asset (serial, IP, user)
+```
 
 ---
 

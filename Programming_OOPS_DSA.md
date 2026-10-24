@@ -1464,6 +1464,44 @@ valid = {
 squares = {x: x*x for x in range(5)}
 ```
 
+### Dictionary Using Tuples
+
+```python
+# Tuple as KEY: composite keys (coordinates, (city, year), (row, col))
+grid = {(0, 0): "start", (2, 3): "wall"}
+grid[(2, 3)]               # 'wall'
+grid[2, 3]                 # same: the parentheses are optional
+(5, 5) in grid             # False
+grid.get((9, 9), ".")      # '.' default for a missing cell
+
+sales = {("Delhi", 2025): 120, ("Delhi", 2026): 150}
+for (city, year), amount in sales.items():     # unpack the key tuple in the loop
+    print(city, year, amount)
+
+# Tuple as VALUE
+places = {"home": (28.6, 77.2), "office": (28.5, 77.3)}
+lat, lon = places["home"]
+
+# Build a dict from a tuple of pairs
+dict((("a", 1), ("b", 2)))                     # {'a': 1, 'b': 2}
+dict(zip(("x", "y"), (10, 20)))                # {'x': 10, 'y': 20}
+
+# Sort by the tuple value
+sorted(places.items(), key=lambda kv: kv[1])   # sorts by (lat, lon)
+```
+
+Rules and gotchas:
+
+```python
+{(1, [2]): "x"}            # TypeError: unhashable type: 'list'  (every item inside must be hashable)
+{tuple([1, 2]): "x"}       # fine: convert a list to a tuple first
+(1, 2) == (2, 1)           # False: order matters, so keys (1, 2) and (2, 1) are different
+```
+
+* A tuple key is a flat alternative to nested dicts: `sales[("Delhi", 2025)]` vs `sales["Delhi"][2025]`. Tuple keys are simpler to write and check; nested dicts are easier to loop over one level.
+* Use `collections.namedtuple` as the key when you want readable fields: `Point(x=1, y=2)`.
+* In Go the equivalent is an array or struct key: `map[[2]int]string` or `map[Point]string`.
+
 ## Sets
 
 ```python
@@ -1595,6 +1633,111 @@ other := maps.Clone(m)                // real independent copy (maps package, Go
 ```
 
 Maps are not safe for concurrent use: writing from two goroutines at once crashes the program (`fatal error: concurrent map writes`). Protect the map with a mutex, or use `sync.Map` for special cases. Struct values stored in a map are not addressable, so `m["k"].count++` does not compile; copy the value out, change it, and store it back.
+
+---
+
+# Enums
+
+An enum is a fixed set of named constants. It replaces "magic" values like `status = 2` with readable, checkable names.
+
+## Enums in Python
+
+```python
+from enum import Enum, IntEnum, StrEnum, Flag, auto, unique
+
+class Color(Enum):
+    RED = 1
+    GREEN = 2
+    BLUE = 3
+
+Color.RED                 # <Color.RED: 1>
+Color.RED.name            # 'RED'
+Color.RED.value           # 1
+Color(2)                  # Color.GREEN   lookup by value
+Color["BLUE"]             # Color.BLUE    lookup by name
+Color.RED is Color.RED    # True          compare members with is / ==
+Color.RED == 1            # False         a plain Enum is not equal to its value
+list(Color)               # iterates in definition order
+Color(9)                  # ValueError: 9 is not a valid Color
+```
+
+```python
+class Status(StrEnum):            # 3.11+: members ARE strings (good for JSON/APIs)
+    ACTIVE = auto()               # auto() gives the lowercase name: 'active'
+    DISABLED = auto()
+
+class Priority(IntEnum):          # members behave as ints
+    LOW = 1
+    HIGH = 3
+Priority.HIGH > Priority.LOW      # True
+
+class Perm(Flag):                 # bit flags, combine with | and &
+    READ = auto()                 # 1
+    WRITE = auto()                # 2
+    EXEC = auto()                 # 4
+rw = Perm.READ | Perm.WRITE
+Perm.READ in rw                   # True
+
+@unique                           # raises an error if two names share a value
+class Level(Enum):
+    DEBUG = 10
+    INFO = 20
+```
+
+Members are immutable and hashable, so they work as dict keys and in `match`:
+
+```python
+match command:
+    case Color.RED:
+        print("stop")
+```
+
+## Enums in Go
+
+Go has no `enum` keyword. The idiom is a named type plus constants generated with `iota`.
+
+```go
+type Weekday int
+
+const (
+    Sunday Weekday = iota    // 0
+    Monday                   // 1
+    Tuesday                  // 2
+)
+
+func (d Weekday) String() string {      // fmt uses this when printing
+    switch d {
+    case Sunday:
+        return "Sunday"
+    case Monday:
+        return "Monday"
+    case Tuesday:
+        return "Tuesday"
+    }
+    return fmt.Sprintf("Weekday(%d)", int(d))
+}
+
+fmt.Println(Monday)        // Monday
+fmt.Println(Weekday(9))    // Weekday(9): Go does NOT reject invalid values
+```
+
+```go
+const (
+    _  = iota                // skip 0
+    KB = 1 << (10 * iota)    // 1024
+    MB                       // 1048576
+)
+
+const (                      // bit flags
+    Read = 1 << iota         // 1
+    Write                    // 2
+    Exec                     // 4
+)
+perm := Read | Write
+perm&Write != 0              // true
+```
+
+> Start at `iota + 1` (or skip 0 with `_`) when you want the zero value to mean "unset".
 
 ---
 
@@ -3477,6 +3620,39 @@ async def main():
 asyncio.run(main())
 ```
 
+## TaskGroup, Semaphore, and Error Handling
+
+```python
+import asyncio
+
+async def fetch(name):
+    await asyncio.sleep(1)
+    return name
+
+async def main():
+    # TaskGroup (3.11+): if one task fails, the others are cancelled
+    async with asyncio.TaskGroup() as tg:
+        t1 = tg.create_task(fetch("a"))
+        t2 = tg.create_task(fetch("b"))
+    print(t1.result(), t2.result())          # both are done after the block
+
+    # gather: collect failures instead of stopping at the first one
+    results = await asyncio.gather(fetch("x"), failing(), return_exceptions=True)
+    # results == ['x', ValueError(...)]
+
+    # Semaphore: cap concurrency (e.g. max 5 requests at a time)
+    sem = asyncio.Semaphore(5)
+    async def limited(name):
+        async with sem:                      # async with: acquire/release without blocking the loop
+            return await fetch(name)
+    await asyncio.gather(*(limited(str(i)) for i in range(20)))
+
+asyncio.run(main())
+```
+
+* Failures inside a `TaskGroup` surface as an `ExceptionGroup` (catch with `except*`)
+* `requests.get()`, `time.sleep()` or heavy computation inside `async def` freezes every task; use an async library or `asyncio.to_thread(...)`
+
 **Key rule:** `async def` marks a coroutine, `await` pauses until it resolves, and `asyncio.run()` starts the event loop. Never use `time.sleep()` inside async code — use `asyncio.sleep()`.
 
 ---
@@ -3545,6 +3721,56 @@ with ThreadPoolExecutor(max_workers=8) as pool:
     results = list(pool.map(fetch, urls))    # results come back in input order
 ```
 
+### Daemon Threads, Event, Queue, and as_completed
+
+```python
+import threading, queue
+
+# Daemon thread: killed automatically when the main program exits
+t = threading.Thread(target=worker, daemon=True)
+
+# Event: a simple on/off signal between threads
+ready = threading.Event()
+ready.wait()                 # blocks until another thread calls ready.set()
+
+# Queue: thread-safe hand-off (producer/consumer), no manual locks needed
+q = queue.Queue()
+
+def producer():
+    for i in range(5):
+        q.put(i)
+    q.put(None)              # sentinel: "no more work"
+
+def consumer():
+    while (item := q.get()) is not None:
+        print("got", item)
+
+threading.Thread(target=producer).start()
+threading.Thread(target=consumer).start()
+```
+
+```python
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+with ThreadPoolExecutor(max_workers=4) as pool:
+    futures = {pool.submit(fetch, u): u for u in urls}
+    for fut in as_completed(futures):          # yields as each finishes, not in input order
+        try:
+            print(futures[fut], fut.result())   # .result() re-raises the worker's exception
+        except Exception as e:
+            print(futures[fut], "failed:", e)
+```
+
+| Primitive | Use |
+| :--- | :--- |
+| `Lock` | One thread at a time in a critical section |
+| `RLock` | Lock the same thread may acquire again (re-entrant) |
+| `Semaphore(n)` | Let at most `n` threads in at once |
+| `Event` | One thread signals, others wait |
+| `Queue` | Pass data between threads safely |
+
+> An exception inside a plain `Thread` only prints a traceback and is lost; with executors it comes back through `.result()`.
+
 ## Race Conditions and Locks
 
 A race condition is a bug where the result depends on the timing of threads. The classic cause is a read-modify-write that is not atomic: `counter += 1` is really three steps (read, add, write), and another thread can run between them, so updates are lost.
@@ -3606,6 +3832,46 @@ if __name__ == "__main__":                   # REQUIRED: child processes re-impo
         results = list(pool.map(heavy, [10_000_000] * 4))
     print(results)
 ```
+
+### Process, Pool, Queue and Shared Values
+
+Processes do not share memory: a global changed in a child is invisible to the parent. Data moves through queues, pipes, or shared objects.
+
+```python
+from multiprocessing import Process, Queue, Pool, Value
+
+def square(n):
+    return n * n
+
+def worker(q, n):
+    q.put(n * n)                       # send a result back to the parent
+
+def add(counter):
+    for _ in range(1000):
+        with counter.get_lock():       # shared Value has its own lock
+            counter.value += 1
+
+if __name__ == "__main__":             # required on Windows/macOS (spawn)
+    with Pool(4) as pool:
+        print(pool.map(square, range(5)))        # [0, 1, 4, 9, 16]
+
+    q = Queue()
+    procs = [Process(target=worker, args=(q, n)) for n in range(3)]
+    for p in procs: p.start()
+    results = [q.get() for _ in procs]  # read BEFORE join(), or a full queue can block forever
+    for p in procs: p.join()
+    print(sorted(results))              # order is not guaranteed, so sort
+
+    counter = Value("i", 0)             # shared int
+    ps = [Process(target=add, args=(counter,)) for _ in range(4)]
+    for p in ps: p.start()
+    for p in ps: p.join()
+    print(counter.value)                # 4000
+```
+
+* Functions and arguments must be picklable, so define worker functions at module top level (no lambdas)
+* `Manager()` gives shared dicts and lists, slower but convenient
+* `multiprocessing.get_start_method()` shows how children are created (`fork`, `spawn`, `forkserver`)
 
 ## When to Use Threading vs Multiprocessing vs asyncio
 
@@ -5068,6 +5334,62 @@ print(1 < 5 < 10)   # True
 # One-liner FizzBuzz
 print(["Fizz"*(i%3==0)+"Buzz"*(i%5==0) or str(i) for i in range(1,16)])
 ```
+
+---
+
+# GUI Basics: tkinter Canvas
+
+## find_overlapping and Related Search Methods
+
+`canvas.find_overlapping(x1, y1, x2, y2)` returns a tuple of IDs of every canvas item that touches the rectangle (top-left `x1,y1`, bottom-right `x2,y2`). Partial overlap counts. It returns `()` when nothing is found.
+
+```python
+import tkinter as tk
+
+root = tk.Tk()
+canvas = tk.Canvas(root, width=400, height=300, bg="white")
+canvas.pack()
+
+player = canvas.create_rectangle(50, 50, 90, 90, fill="blue")    # ID 1
+wall   = canvas.create_rectangle(80, 80, 200, 120, fill="red")   # ID 2
+coin   = canvas.create_oval(300, 200, 320, 220, fill="gold")     # ID 3
+
+print(canvas.find_overlapping(80, 80, 100, 100))   # (1, 2): both touch that area
+print(canvas.find_overlapping(0, 0, 10, 10))       # ()
+```
+
+Collision check (the item always overlaps itself, so remove it from the result):
+
+```python
+def collisions(item):
+    x1, y1, x2, y2 = canvas.bbox(item)          # bbox works for every item type
+    return [i for i in canvas.find_overlapping(x1, y1, x2, y2) if i != item]
+
+if collisions(player):
+    print("player hit something")
+```
+
+Click detection (a zero-size rectangle is a point):
+
+```python
+def on_click(event):
+    x, y = canvas.canvasx(event.x), canvas.canvasy(event.y)   # needed if the canvas scrolls
+    hit = canvas.find_overlapping(x, y, x, y)
+    if hit:
+        print("clicked item", hit[-1])          # last ID = topmost item
+
+canvas.bind("<Button-1>", on_click)
+```
+
+| Method | Returns |
+| :--- | :--- |
+| `find_overlapping(x1,y1,x2,y2)` | Items touching the rectangle, even partly |
+| `find_enclosed(x1,y1,x2,y2)` | Items completely inside the rectangle |
+| `find_closest(x, y)` | The single item nearest to the point |
+| `find_withtag(tag)` | Items with that tag (`"all"`, `"current"` also work) |
+| `find_all()` | Every item, in stacking order (lowest first) |
+
+> `bbox` can be a pixel or so larger than the drawn shape, so items that just barely touch may be reported as overlapping.
 
 ---
 
