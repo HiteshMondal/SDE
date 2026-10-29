@@ -1,6 +1,6 @@
-# Programming Complete Guide (Python and Go)
+# Programming Complete Guide (Python and TypeScript)
 
-A single-file reference covering how programs are written, run, and organized, the concepts every language shares, built-ins, coding patterns, tricks, DSA, and OOP — each with a working code example. Python is the main language; Go examples sit next to it wherever the topic matters. The DSA and OOP sections stay Python only.
+A single-file reference covering how programs are written, run, and organized, the concepts every language shares, built-ins, coding patterns, tricks, DSA, and OOP — each with a working code example. Python is the main language; TypeScript examples sit next to it wherever the topic matters. The DSA and OOP sections stay Python only.
 
 ---
 
@@ -27,48 +27,76 @@ pip --version           # also shows WHICH Python this pip belongs to
 
 On Linux and macOS, `python3` is the safe command name. Do not replace or upgrade the system Python (OS tools depend on it); install other versions with `pyenv`, `uv`, or `conda`, and keep each project in its own virtual environment (see Dependencies and Environments).
 
-## Installing Go
+## Installing TypeScript
 
-Download the installer from https://go.dev/dl/ and run it (Windows/macOS), or on Linux unpack the tarball and add it to `PATH`.
+TypeScript is a language that compiles to JavaScript, so you first need a JavaScript runtime. Install Node.js (pick the LTS version) from https://nodejs.org/; it includes `npm`, the package manager. TypeScript itself is then installed per project as a normal dependency.
 
-```bash
-# Linux (replace the file name with the version you downloaded)
-sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.XX.X.linux-amd64.tar.gz
-export PATH=$PATH:/usr/local/go/bin        # add this line to ~/.bashrc or ~/.zshrc
-
-go version                                  # verify the install
-go env GOPATH GOROOT                        # where Go keeps downloaded modules and the toolchain
+```text
+Windows : run the Node.js installer (it adds node and npm to PATH)
+macOS   : nodejs.org installer, or:  brew install node
+Linux   : use a version manager (recommended) or the package manager
+          nvm install --lts                                     (nvm, fnm, or volta switch versions per project)
+          sudo apt install nodejs npm                           (Debian/Ubuntu, often an older version)
 ```
 
-Programs installed with `go install` land in `$(go env GOPATH)/bin`, so add that folder to `PATH` too. Go modules (go.mod) can also pin a minimum Go version, and newer Go versions can download the matching toolchain automatically.
+```bash
+node --version                      # the runtime
+npm --version                       # the package manager
+
+mkdir hello && cd hello
+npm init -y                         # creates package.json
+npm install --save-dev typescript @types/node
+npx tsc --version                   # the compiler installed inside this project
+npx tsc --init                      # creates tsconfig.json (compiler settings)
+```
+
+A minimal `tsconfig.json` for a Node.js project (the generated file has many more commented options):
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": "src",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"]
+}
+```
+
+Keep `strict` on: it turns on `strictNullChecks`, `noImplicitAny`, and the other checks that make TypeScript worth using. As with the system Python, do not rely on the Node.js that an operating system tool installed; use `nvm`, `fnm`, or `volta` so each project can pin its own Node version (a `.nvmrc` file or the `engines` field in `package.json`).
 
 ## Where to Write Code
 
-Python and Go source code is plain text. Any editor can write it; an IDE or a good editor adds autocomplete, error highlighting, a debugger, and test runners.
+Python and TypeScript source code is plain text. Any editor can write it; an IDE or a good editor adds autocomplete, error highlighting, a debugger, and test runners.
 
-* Python files end in `.py`, Go files end in `.go`
+* Python files end in `.py`, TypeScript files end in `.ts` (`.tsx` when they contain JSX for React)
 * Save the file, then run it from a terminal (next sections)
 * A real application is a folder of files, not one file: an entry point, modules/packages, tests, and dependency files
 
 Where the code eventually runs depends on the application:
 
 * A script run by hand or by a scheduler (cron, CI pipeline)
-* A command-line tool (`argparse` in Python, `flag` or `cobra` in Go)
-* A web service (Flask/FastAPI/Django behind gunicorn/uvicorn in Python, `net/http` in Go) inside a container or on a server
+* A command-line tool (`argparse` in Python, `commander` or `yargs` in TypeScript; Node also has a built-in `util.parseArgs`)
+* A web service (Flask/FastAPI/Django behind gunicorn/uvicorn in Python, Express/Fastify/NestJS on Node.js in TypeScript) inside a container or on a server
+* A browser application (React, Angular, Vue, Svelte), where TypeScript is compiled or bundled to JavaScript that the browser runs
 * A notebook (Jupyter) for data work and experiments
 * A serverless function (AWS Lambda, Cloud Functions)
 
 ## Choosing an IDE or Editor
 
-* VS Code — free, works for both languages (install the Python extension and the Go extension); the best all-round choice to start with
+* VS Code — free, works for both languages (TypeScript support is built in; install the Python extension for Python); the best all-round choice to start with
 * PyCharm (Community is free) — full Python IDE, strongest for large Python projects, refactoring, and debugging
-* GoLand — the matching full IDE for Go
+* WebStorm — the matching full IDE for TypeScript and JavaScript
 * Jupyter / JupyterLab / Google Colab — notebooks for data analysis and learning, not for building applications
 * IDLE — ships with Python, fine for the first day only
 * Vim/Neovim/Emacs — powerful, but need plugins (language servers) to match an IDE
 
-Whatever you pick, set it to use the interpreter of the project's virtual environment, so autocomplete and the debugger see the same libraries your code will run with.
+Whatever you pick, set it to use the interpreter of the project's virtual environment (Python) and the project's own `typescript` version from `node_modules` (TypeScript), so autocomplete and the debugger see the same libraries and compiler your code will run with.
 
 ## Your First Program
 
@@ -82,18 +110,18 @@ if __name__ == "__main__":
     main()
 ```
 
-```go
-// file: main.go
-package main            // package main = this code builds an executable program
+```ts
+// file: src/hello.ts
+import * as readline from "node:readline/promises";   // built-in Node.js module for reading input
 
-import "fmt"            // standard library package for printing and formatting
-
-func main() {           // the entry point: runs first
-    var name string
-    fmt.Print("Your name: ")
-    fmt.Scanln(&name)
-    fmt.Printf("Hello, %s!\n", name)
+async function main(): Promise<void> {                  // async because reading input waits
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const name = await rl.question("Your name: ");
+  console.log(`Hello, ${name}!`);
+  rl.close();
 }
+
+main();                                                  // TypeScript has no special main(): the file simply runs top to bottom
 ```
 
 ## Running a Python File
@@ -116,18 +144,43 @@ chmod +x hello.py
 
 The exit code tells the caller whether the program succeeded: `0` means success, anything else means failure (`sys.exit(1)`).
 
-## Running a Go Program
+## Running a TypeScript Program
 
 ```bash
-mkdir hello && cd hello
-go mod init example.com/hello    # creates go.mod (every Go project is a module)
-go run .                          # compile to a temporary binary and run it
-go build                          # produce a real executable: ./hello (hello.exe on Windows)
-./hello
-go build -o myapp ./cmd/server    # choose output name and which package to build
-GOOS=linux GOARCH=amd64 go build  # cross-compile for another OS/CPU
-go install                        # build and copy the binary into $GOPATH/bin
+npx tsc                          # type-check and compile src/*.ts into dist/*.js (as set in tsconfig.json)
+node dist/hello.js               # run the compiled JavaScript
+node dist/hello.js arg1 arg2     # arguments arrive in process.argv (index 0 = node, 1 = the script, 2+ = yours)
+
+npx tsc --watch                  # recompile on every save
+npx tsc --noEmit                 # only type-check, write no files (what CI usually runs)
+
+npx tsx src/hello.ts             # run a .ts file directly (the tsx tool strips types and runs it; no type-check)
+node src/hello.ts                # recent Node versions (22.18+ / 23.6+) can run .ts directly by stripping types
+                                 # (only "erasable" syntax: no enums or namespaces; no type-check either)
+node                             # start the REPL; leave with .exit or Ctrl+D
+node -e "console.log('hi')"      # run one line
 ```
+
+```json
+// package.json: scripts give every project the same short commands
+{
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/hello.js",
+    "dev": "tsx watch src/hello.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}
+```
+
+```bash
+npm run build
+npm start
+npm run typecheck
+```
+
+The exit code works the same way: `0` means success, anything else means failure (`process.exit(1)` or `process.exitCode = 1`). Remember: `tsc` checks types and translates; Node.js never sees your types. Runners such as `tsx` skip the type-check for speed, so keep a separate `tsc --noEmit` step.
 
 ## How an Application Is Organized
 
@@ -144,12 +197,16 @@ myapp/                         (Python)
 └── tests/
     └── test_services.py
 
-myapp/                         (Go)
-├── go.mod                     # module name + dependency versions
-├── go.sum                     # checksums of dependencies
-├── cmd/myapp/main.go          # package main: thin entry point
-├── internal/service/service.go # logic, importable only from inside this module
-└── internal/service/service_test.go
+myapp/                         (TypeScript)
+├── node_modules/              # installed dependencies, never committed
+├── package.json               # project info + dependencies + scripts
+├── package-lock.json          # exact versions of everything installed
+├── tsconfig.json              # compiler settings
+├── src/
+│   ├── index.ts               # entry point: reads arguments, calls the logic
+│   ├── services.ts            # the actual logic, importable and testable
+│   └── services.test.ts
+└── dist/                      # compiled JavaScript output, never committed
 ```
 
 Keep the entry point thin: read configuration, wire things together, call into modules that can be imported and tested without starting the whole program.
@@ -158,24 +215,26 @@ Keep the entry point thin: read configuration, wire things together, call into m
 
 Source code is text a human writes. A CPU can only run machine code, so something must translate it. There are two classic strategies:
 
-* Compiled: a compiler translates the whole program ahead of time into machine code. You run the resulting file. (Go, C, Rust)
+* Compiled: a compiler translates the whole program ahead of time into machine code. You run the resulting file. (C, Rust)
 * Interpreted: an interpreter reads the program and executes it while running. (the original idea behind Python, Ruby, JavaScript)
 
-In practice the line is blurry, and it belongs to the implementation, not the language. CPython (the standard Python) first compiles source to bytecode and then a virtual machine interprets that bytecode. Go compiles straight to a native executable. Other runtimes (the JVM, JavaScript engines, PyPy) add a JIT compiler that turns hot bytecode into machine code while the program runs.
+In practice the line is blurry, and it belongs to the implementation, not the language. CPython (the standard Python) first compiles source to bytecode and then a virtual machine interprets that bytecode. TypeScript is a two-step case: the TypeScript compiler (`tsc`, or faster tools such as esbuild and swc) checks the types and translates `.ts` into plain JavaScript, erasing every type annotation; then a JavaScript engine (V8 in Node.js and Chrome) parses that JavaScript into bytecode and uses a JIT compiler to turn hot code into machine code while the program runs. Other runtimes (the JVM, PyPy) also add a JIT.
 
 ```text
-Python:  hello.py  --compile-->  bytecode (.pyc)  --Python VM executes-->  CPU
-Go:      main.go   --compile + link-->  machine-code executable  --OS runs it-->  CPU
+Python:      hello.py  --compile-->  bytecode (.pyc)  --Python VM executes-->  CPU
+TypeScript:  hello.ts  --tsc: check types, erase them-->  hello.js
+                       --V8: bytecode, then JIT-->  machine code  -->  CPU
 ```
 
 ### Source Code, Bytecode, Machine Code, Executable
 
-| Term | What it is | In Python | In Go |
+| Term | What it is | In Python | In TypeScript |
 | :--- | :--- | :--- | :--- |
-| Source code | Human-readable text | `hello.py` | `main.go` |
-| Bytecode | Compact instructions for a virtual machine, same on every OS/CPU | `__pycache__/hello.cpython-3xx.pyc` | not used |
-| Machine code | Instructions for one specific CPU (x86-64, ARM64) | only inside the interpreter itself | inside your binary |
-| Executable | A file the OS can launch: machine code + metadata (`.exe`, ELF, Mach-O) | `python` is the executable; your `.py` is just its input | `./hello` is the executable |
+| Source code | Human-readable text | `hello.py` | `hello.ts` |
+| Intermediate output | What the compiler step produces | `__pycache__/hello.cpython-3xx.pyc` (bytecode cache) | `dist/hello.js` (plus optional `.d.ts` type files and `.js.map` source maps) |
+| Bytecode | Compact instructions for a virtual machine, same on every OS/CPU | the `.pyc` file | lives only inside V8 while the program runs; not a file you ship |
+| Machine code | Instructions for one specific CPU (x86-64, ARM64) | only inside the interpreter itself | generated by V8's JIT at run time, never saved to disk |
+| Executable | A file the OS can launch: machine code + metadata (`.exe`, ELF, Mach-O) | `python` is the executable; your `.py` is just its input | `node` is the executable; your compiled `.js` is just its input |
 
 Python compiles each imported module to bytecode and caches it in `__pycache__`, so the next start is faster. You can look at the bytecode with the `dis` module:
 
@@ -190,37 +249,59 @@ dis.dis(add)
 # (the exact instructions change between Python versions)
 ```
 
-An executable Go binary is self-contained, so you copy one file to a server and run it. A Python program needs a Python installation plus its libraries on the target machine (or a container image, or a bundler such as PyInstaller).
+TypeScript's compile step is mostly "erase the types". Compare the input and the output:
+
+```ts
+// add.ts (input)
+function add(a: number, b: number): number {
+  return a + b;
+}
+```
+
+```js
+// add.js (output of tsc): the annotations are gone, nothing about "number" exists at run time
+function add(a, b) {
+    return a + b;
+}
+```
+
+Because types vanish, a TypeScript program cannot check a value's TypeScript type while it runs; it can only test JavaScript facts such as `typeof x === "string"`. (V8 bytecode can be printed with `node --print-bytecode`, but you almost never need it.)
+
+A Python program needs a Python installation plus its libraries on the target machine (or a container image, or a bundler such as PyInstaller). A TypeScript program needs Node.js (or Deno or Bun) plus `node_modules` on the target machine, or a container image, or a bundler (esbuild, webpack, Vite) that packs everything into one file. Single-file executables also exist (`node --experimental-sea-config`, `bun build --compile`, `deno compile`).
 
 ### What the Runtime Does
 
 The runtime is the code that runs alongside your program and does the work the language promises. Your code never calls most of it directly.
 
 * Memory management: allocating objects, tracking who still uses them, garbage collection
-* Executing code: the Python VM loop; in Go, native code plus the runtime's helpers
-* Scheduling: Python threads (under the GIL); Go's scheduler that runs goroutines on OS threads
-* Safety checks: type checks and exceptions in Python; bounds checks, nil checks, and panics in Go
-* Built-in data structures: dict/list in Python, map/slice/channel in Go
-* Importing and loading code: Python resolves imports at run time; Go resolves them at compile time
+* Executing code: the Python VM loop; in Node.js the V8 engine (interpreter plus JIT compiler)
+* Scheduling: Python threads (under the GIL); in Node.js the event loop, which runs your JavaScript on one thread and hands waiting work (network, disk, timers) to the operating system and helper threads
+* Safety checks: type checks and exceptions in Python; in TypeScript the types are already erased, so the runtime only throws errors such as `TypeError` for things like reading a property of `undefined`
+* Built-in data structures: dict/list in Python, Object/Map/Array in TypeScript
+* Importing and loading code: Python resolves imports at run time; Node.js loads modules (ES modules or CommonJS) at run time too, while `tsc` only checks at compile time that the import path exists
 
-In Python the runtime is the interpreter. In Go the runtime is a library linked into every binary, which is one reason even a tiny Go program is a few megabytes.
+In Python the runtime is the interpreter. In TypeScript the runtime is the JavaScript engine plus the host environment (Node.js, Deno, Bun, or a browser), which supplies things like `fs`, `fetch`, and timers.
 
 ## Kinds of Errors
 
 ### Syntax Errors
 
-The code is not valid for the language. Python reports them when it compiles the file (before any line runs); Go reports them at compile time and refuses to build.
+The code is not valid for the language. Python reports them when it compiles the file (before any line runs). TypeScript reports them at compile time too, and it also reports type errors in the same pass.
 
 ```python
 # print("hello"        -> SyntaxError: '(' was never closed
 # if x = 5:            -> SyntaxError: invalid syntax (use == for comparison)
 ```
 
-```go
-// x := 5      declared but not used  -> compile error: declared and not used
-// import "os" never used            -> compile error: "os" imported and not used
-// var n int = "hi"                  -> compile error: cannot use "hi" (untyped string constant) as int value
+```ts
+// console.log("hello"                 -> error TS1005: ')' expected
+// let x: number = ;                   -> error TS1109: Expression expected
+// const n: number = "hi";             -> error TS2322: Type 'string' is not assignable to type 'number'
+// let count = 1; count = "a";         -> error TS2322 (the type was inferred as number)
+// const unused = 5;                   -> error TS6133 only when "noUnusedLocals" is turned on
 ```
+
+Note that by default `tsc` still writes the `.js` files even when it found errors (unless you set `noEmitOnError`), so a build can "succeed" with errors; make CI fail on a non-zero exit code from `tsc`.
 
 ### Runtime Errors
 
@@ -234,14 +315,19 @@ nums = [1, 2, 3]
 # None.upper()    -> AttributeError
 ```
 
-```go
-nums := []int{1, 2, 3}
-// nums[10]                  -> panic: runtime error: index out of range [10] with length 3
-// var m map[string]int; m["a"] = 1  -> panic: assignment to entry in nil map
-// var p *int; *p = 1                -> panic: nil pointer dereference
+```ts
+const nums = [1, 2, 3];
+// nums[10]                     -> undefined (NO error; with noUncheckedIndexedAccess the type becomes number | undefined)
+// JSON.parse("abc")            -> SyntaxError: Unexpected token 'a', "abc" is not valid JSON
+// 10 / 0                       -> Infinity (NO error)
+// Number("abc")                -> NaN (NO error)
+// 1n + 1                       -> TypeError: Cannot mix BigInt and other types
+
+const user = JSON.parse('{"name": null}') as { name: string };   // the compiler believes the cast, the data disagrees
+// user.name.toUpperCase()      -> TypeError: Cannot read properties of null (reading 'toUpperCase')
 ```
 
-Python raises exceptions that can be caught. Go separates expected failures (returned as `error` values) from bugs (`panic`). See Exception Handling.
+Python raises an exception almost every time something is off. JavaScript and TypeScript often keep going with `undefined`, `NaN`, or `Infinity`, and the failure shows up later and further away. See Exception Handling.
 
 ### Logical Errors
 
@@ -254,7 +340,14 @@ def average(nums):
 print(average([2, 4, 6]))                # 5.0, expected 4.0
 ```
 
-Static typing (Go) turns whole categories of runtime errors into compile errors. Python can get part of that with type hints and a checker such as `mypy`.
+```ts
+function average(nums: number[]): number {
+  return nums.reduce((a, b) => a + b, 0) / nums.length + 1;   // bug: compiles, runs, wrong answer
+}
+console.log(average([2, 4, 6]));                                // 5, expected 4
+```
+
+Static typing (TypeScript) turns whole categories of runtime errors into compile errors. Python can get part of that with type hints and a checker such as `mypy`.
 
 ## Reading an Error Message
 
@@ -271,16 +364,20 @@ Traceback (most recent call last):
 ValueError: invalid literal for int() with base 10: 'abc'
 ```
 
-A Go panic prints the message first, then the stack of the goroutine that panicked:
+A Node.js error prints the failing source line, then the error type and message, then the stack with the most recent call first, so you read it from the top down:
 
 ```text
-panic: runtime error: index out of range [5] with length 3
+/home/me/app/dist/app.js:3
+    throw new Error(`invalid age: ${text}`);
+          ^
 
-goroutine 1 [running]:
-main.main()
-    /home/me/app/main.go:9 +0x1d
-exit status 2
+Error: invalid age: abc
+    at parseAge (/home/me/app/dist/app.js:3:11)
+    at main (/home/me/app/dist/app.js:6:12)
+    at Object.<anonymous> (/home/me/app/dist/app.js:9:1)
 ```
+
+The line numbers refer to the compiled `.js` file. Run Node with `--enable-source-maps` (and keep `"sourceMap": true` in `tsconfig.json`) and the stack shows the original `.ts` lines instead.
 
 ---
 
@@ -307,108 +404,106 @@ z = str(100)         # "100"
 b = bool(0)           # False
 ```
 
-## Variables and Data Types in Go
+## Variables and Data Types in TypeScript
 
-Go is statically typed: every variable has one fixed type, known at compile time. Code lives in packages and starts at `func main()`.
+TypeScript is statically typed: every variable has a type that the compiler knows before the program runs. Most of the time you do not write the type, because the compiler infers it from the value. The types exist only at compile time and are erased from the JavaScript that runs.
 
-```go
-package main
+```ts
+const name: string = "Alice";        // string (annotation written out)
+let age = 25;                         // number (type inferred)
+let height = 5.6;                     // number (every number is a 64-bit float)
+const isActive = true;                // boolean
+let data: string | null = null;       // a union type: either a string or null
+let missing: number | undefined;      // declared but not assigned: its value is undefined
 
-import "fmt"
+console.log(typeof age);              // "number"  (typeof is a run-time check on the JavaScript value)
+console.log(data === null);           // true
+```
 
-func main() {
-    var name string = "Alice"   // string
-    age := 25                    // int (type inferred)
-    height := 5.6                // float64 (inferred)
-    isActive := true             // bool
-    var data *int                // nil pointer: Go's closest thing to None for pointers
+### let vs const vs var
 
-    fmt.Printf("%T %T %T %T\n", name, age, height, isActive)   // string int float64 bool
-    fmt.Println(data == nil)                                    // true
+```ts
+let x = 1;               // can be reassigned; block scoped
+const y = 10;            // cannot be reassigned; block scoped (prefer this by default)
+var z = 3;               // old style: function scoped and hoisted; avoid it
+
+const items = [1, 2];
+items.push(3);           // allowed: const fixes the binding, not the contents of the array
+// items = [];           // compile error: Cannot assign to 'items' because it is a constant
+
+let a = 1, b = "two";                                  // several at once
+const { host, port } = { host: "localhost", port: 8080 };   // destructuring an object
+const [first, second] = [10, 20];                      // destructuring an array
+
+let n: number;
+// console.log(n);       // compile error: Variable 'n' is used before being assigned
+```
+
+* Use `const` unless the variable really is reassigned, then use `let`; never use `var`
+* `const` protects the name, not the value; use `readonly`, `as const`, or `Object.freeze` for immutable data
+* An unused variable is not an error by default; turn on `noUnusedLocals` and `noUnusedParameters` in `tsconfig.json` (or use ESLint) to catch them
+
+### Default Values: undefined, Not Zero
+
+TypeScript has no zero values. A variable that is declared without a value is `undefined`, and strict mode refuses to let you read it before it is assigned. If you want a default, write it down.
+
+```ts
+let count: number | undefined;           // undefined until assigned
+const total = count ?? 0;                // ?? gives a default only for null/undefined
+function greet(name = "world") {         // default parameter value
+  return `Hello, ${name}`;
 }
-```
 
-### var vs :=
-
-```go
-var x int            // declares x with its zero value (0); the type is written out
-var y int = 10       // type and value
-var z = 10           // type inferred from the value (int)
-w := 10              // short declaration: declare + infer in one step
-
-var a, b = 1, "two"  // several at once
-c, d := 3, 4.5
-
-var (                // grouped declaration, common at package level
-    host = "localhost"
-    port = 8080
-)
-
-// := needs at least one NEW variable on the left side
-n, err := strconv.Atoi("1")
-m, err := strconv.Atoi("2")    // fine: m is new, err is reused (assigned, not redeclared)
-```
-
-* `var x int` works anywhere (including package level) and gives the zero value; `x := 10` works only inside functions and always infers the type
-* Use `var` when you want the zero value or must state the type (`var f float64 = 1`), use `:=` for everything else
-* An unused local variable or an unused import is a compile error; assign to `_` to ignore a value on purpose
-
-### Zero Values (Default Values)
-
-Go has no uninitialized variables. Every variable that is declared without a value gets its type's zero value.
-
-```go
-var i int              // 0
-var f float64          // 0
-var b bool             // false
-var s string           // "" (an empty string, never nil)
-var p *int             // nil
-var sl []int           // nil slice (len 0, cap 0)
-var m map[string]int   // nil map
-var ch chan int        // nil channel
-var fn func()          // nil
-var e error            // nil (interface)
-var arr [3]int         // [0 0 0]
-
-type Point struct {
-    X, Y int
-    Name string
+class Point {
+  x = 0;                                 // class fields get their defaults from initializers
+  y = 0;
+  label = "";
 }
-var pt Point           // {0 0 ""}: every field gets its own zero value
+const pt = new Point();                  // Point { x: 0, y: 0, label: '' }
+
+const empty: number[] = [];              // an empty array
+const sparse = new Array<number>(3);     // [ <3 empty items> ]: holes, not zeros (use .fill(0))
+const zeros = new Array<number>(3).fill(0);   // [0, 0, 0]
 ```
 
-* The zero value of a slice is a nil slice: `len` is 0, and `append` and `range` work on it
-* The zero value of a map is a nil map: reading returns the zero value of the element type, but writing panics (use `make`)
-* The zero value of a pointer is `nil`; dereferencing it panics
-* The zero value of a struct is a struct with all fields zeroed, and it is a usable value; good Go types are designed so the zero value works (`sync.Mutex`, `bytes.Buffer`, `strings.Builder`)
+* `undefined` means "no value was ever given"; `null` means "deliberately empty"; with `strictNullChecks` (part of `strict`) the compiler makes you handle both before use
+* An array declared with `[]` is empty and usable; an object property that was never set reads as `undefined`
+* Python has the same split: a name that was never assigned does not exist (`NameError`), and "no value" is written explicitly as `None`
 
-In Python a name that was never assigned simply does not exist (`NameError`), and "no value" is expressed explicitly with `None`.
+### Constants and Enums
 
-### Constants and iota
+```ts
+const PI = 3.14159;
 
-```go
-const Pi = 3.14159
-const (
-    Sunday = iota    // 0
-    Monday           // 1
-    Tuesday          // 2
-)
+const enum Direction { Up, Down }                 // see the Enums section for the full story
+enum Day { Sunday, Monday, Tuesday }              // Sunday = 0, Monday = 1, Tuesday = 2
+
+const CONFIG = { retries: 3, mode: "fast" } as const;   // readonly, with literal types
+// CONFIG.retries = 5;                                  // compile error: it is a read-only property
 ```
 
 Python has no real constants; the convention is an UPPER_CASE name (`MAX_RETRIES = 3`) that nobody should reassign.
 
 ### Basic Types
 
-```go
-bool
+```ts
+boolean
 string
-int, int8, int16, int32, int64         // int is 32 or 64 bits depending on the platform (64 on modern machines)
-uint, uint8, uint16, uint32, uint64
-float32, float64
-byte                                   // alias for uint8
-rune                                   // alias for int32: one Unicode code point
-complex64, complex128
+number                      // 64-bit float; whole numbers are exact up to 2^53 - 1 (Number.MAX_SAFE_INTEGER)
+bigint                      // arbitrary-size integers: 123n
+symbol                      // unique identifiers
+null
+undefined
+void                        // "returns nothing" (a function result)
+never                       // a value that cannot exist (a function that always throws)
+unknown                     // "could be anything": must be checked before use (safe)
+any                         // switches the type checker off for that value (avoid)
+string[]  /  Array<string>  // arrays
+[string, number]            // tuple: fixed length and position types
+{ id: number; name: string }  // object type
 ```
+
+There is no separate `int`, `float`, `byte`, or `char`: all numbers are `number` (or `bigint`), and a "character" is just a string of length 1.
 
 ---
 
@@ -597,49 +692,81 @@ bool(0)                  # False  (only the number 0 is falsy)
 list("123")                # ['1', '2', '3']  (splits into chars, not [123])
 ```
 
-## Type Conversion in Go
+## Type Conversion in TypeScript
 
-Go never converts between different types on its own. Even `int` to `int64` or `int` to `float64` needs an explicit conversion written as `T(value)`. Converting text to numbers and back goes through the `strconv` package, and parsing returns an `error` because it can fail.
+TypeScript has no conversion functions of its own: you use JavaScript's, and they are forgiving. Converting text to a number does not throw when the text is bad, it quietly gives `NaN` ("not a number"), so you must check the result. Also remember that a type assertion (`x as number`) is not a conversion; it only tells the compiler to trust you.
 
-```go
-i := 42
-f := float64(i)           // 42   explicit int -> float64
-g := 3.99
-n := int(g)               // 3    truncates toward zero, does not round
-var small int8 = int8(300) // overflow wraps silently when converting variables (value changes!)
-
+```ts
 // number <-> string
-s := strconv.Itoa(i)                    // "42"
-n, err := strconv.Atoi("42")            // 42, nil
-n, err = strconv.Atoi("abc")            // 0, error: invalid syntax
-f, err := strconv.ParseFloat("3.14", 64) // 3.14
-b, err := strconv.ParseBool("true")      // true
-x, err := strconv.ParseInt("ff", 16, 64) // 255   (string, base, bit size)
-bin := strconv.FormatInt(10, 2)          // "1010"
-t := fmt.Sprint(i)                       // "42"   (works for any value)
+const s = String(42);                    // "42"   (also `${42}` or (42).toString())
+const n = Number("42");                  // 42
+Number("3.14");                          // 3.14
+Number("abc");                           // NaN    no exception!
+Number("");                              // 0      surprise: an empty string becomes 0
+Number(null);                            // 0
+Number(undefined);                       // NaN
+Number.isNaN(Number("abc"));             // true   the safe way to test (NaN === NaN is false)
 
-// string <-> bytes <-> runes
-bs := []byte("abc")        // [97 98 99]
-rs := []rune("héllo")      // one rune per character
-str := string(rs)          // back to string
+parseInt("42px", 10);                    // 42     stops at the first invalid character
+parseInt("ff", 16);                      // 255    (string, base)
+parseFloat("3.14abc");                   // 3.14
+(255).toString(16);                      // "ff"
+(10).toString(2);                        // "1010"
+(3.14159).toFixed(2);                    // "3.14" (returns a STRING)
 
-string(rune(65))           // "A"   int -> character
-string(65)                 // also "A", NOT "65" (go vet warns); use strconv.Itoa(65) for "65"
+// float -> int
+Math.trunc(3.99);                        // 3    truncates toward zero, like Python int()
+Math.round(3.5);                         // 4
+Math.floor(-3.5);                        // -4
+Math.ceil(3.2);                          // 4
 
-// bool has no numeric conversion: if flag { n = 1 } else { n = 0 }
+// boolean
+Boolean(0);                              // false
+Boolean("");                             // false
+Boolean("false");                        // true  non-empty string is truthy, even "false"!
+Boolean("0");                            // true
+Boolean([]);                             // true  an empty array is truthy (Python: falsy)
+!!"text";                                // true  double negation: a common shortcut
+
+// bigint
+const big = BigInt(10);                  // 10n
+Number(10n);                             // 10
+
+// string <-> array <-> characters
+Array.from("abc");                       // ["a", "b", "c"]   (also [..."abc"], splits by code point)
+"dog cat".split(" ");                    // ["dog", "cat"]
+["P", "y", "t"].join("");                // "Pyt"
+"A".charCodeAt(0);                       // 65
+"😀".codePointAt(0);                     // 128512
+String.fromCharCode(65);                 // "A"
+String.fromCodePoint(128512);            // "😀"
+
+// objects <-> JSON
+const json = JSON.stringify({ name: "Alice", age: 25 });   // object -> JSON string
+const back = JSON.parse(json);                              // JSON string -> any (validate it!)
+
+// collections
+const set = new Set([1, 2, 2, 3]);       // Set {1, 2, 3}
+const arr = [...set];                    // [1, 2, 3]    (also Array.from(set))
+const entries = Object.entries({ a: 1, b: 2 });   // [["a", 1], ["b", 2]]
+const obj = Object.fromEntries(entries);          // { a: 1, b: 2 }
+const map = new Map(entries);                     // Map(2) {"a" => 1, "b" => 2}
 ```
 
-### Mixing Types Does Not Compile
+### Mixing Types: What the Compiler Stops
 
-```go
-var a int = 1
-var b int64 = 2
-// c := a + b           // compile error: mismatched types int and int64
-c := int64(a) + b       // convert one side explicitly
+```ts
+const a: number = 1;
+const b: bigint = 2n;
+// const c = a + b;           // compile error: Operator '+' cannot be applied to types 'number' and 'bigint'
+const c = BigInt(a) + b;      // convert one side explicitly
 
-const k = 10            // untyped constant: adapts to the type it meets
-var d float64 = k * 1.5 // fine
+// "5" - 2                    // compile error in TypeScript (the answer is 3 in plain JavaScript)
+"5" + 2;                      // "52"  allowed: + with a string is always concatenation
+Number("5") - 2;              // 3     say what you mean
 ```
+
+The compiler blocks the worst coercions (arithmetic on strings, mixing `bigint` and `number`) but still allows `+` with a string. It also cannot protect you from data it never saw, such as the result of `JSON.parse`.
 
 ## Operators
 
@@ -683,31 +810,48 @@ print(x ^ x)                    # 0 → XOR with itself
 
 **Interview tip:** Bitwise operators are commonly used for **flags, masks, checking/set/clearing bits, XOR problems, and powers of 2**.
 
-## Operators in Go
+## Operators in TypeScript
 
-```go
-7 / 2           // 3     integer division when both sides are ints (truncates toward zero)
-7.0 / 2         // 3.5   float division if either side is a float
--7 / 2          // -3    Python gives -4 (// floors); Go truncates toward zero
--7 % 3          // -1    Python gives 2 (result takes the sign of the divisor); Go takes the sign of the dividend
-// no ** operator: use math.Pow(2, 10), which returns float64
+```ts
+7 / 2                 // 3.5   always float division: there is no integer division operator
+Math.trunc(7 / 2)     // 3     truncate toward zero
+Math.floor(7 / 2)     // 3     Math.floor(-7 / 2) is -4, the same as Python's //
+-7 % 3                // -1    % takes the sign of the dividend; Python gives 2 (the sign of the divisor)
+((-7 % 3) + 3) % 3    // 2     the usual trick for a Python-style (always non-negative) modulo
+2 ** 10               // 1024  exponent operator, like Python's **
 
-a, b := 5, 3
-a & b           // 1     AND
-a | b           // 7     OR
-a ^ b           // 6     XOR (binary)
-^a              // -6    NOT is ^ in Go, not ~
-a &^ b          // 4     AND NOT: clears the bits of a that are set in b
-a << 1          // 10
-a >> 1          // 2
+// Bitwise operators work on 32-bit SIGNED integers (the number is converted first)
+const a = 5, b = 3;
+a & b                 // 1     AND
+a | b                 // 7     OR
+a ^ b                 // 6     XOR
+~a                    // -6    NOT
+a << 1                // 10
+a >> 1                // 2     sign-preserving right shift
+-5 >>> 1              // 2147483645   unsigned right shift (fills with zeros)
+1 << 31               // -2147483648  it wraps into the sign bit
+2 ** 32 | 0           // 0     anything above 32 bits is cut off (use BigInt for big masks)
 
-x := 5
-x++             // increment is a statement, not an expression: no y := x++, no ++x
-x += 2
+let x = 5;
+x++;                  // increment works as a statement or an expression
+x += 2;
 
-// && || ! for logic (not "and", "or", "not")
-// no ternary operator and no walrus operator: use a normal if statement
+// Logical: && || ! (not "and", "or", "not")
+const ok = x > 3 && x < 10;
+const name = "" || "default";       // || falls back on ANY falsy value: "" -> "default"
+const count = 0 ?? 5;               // ?? falls back only on null/undefined: 0 stays 0
+user?.profile?.email;               // ?. optional chaining: undefined instead of an error
+let cache: string | undefined;
+cache ??= "loaded";                 // assign only if null/undefined (also ||= and &&=)
+
+// Ternary and comparison
+const label = x >= 18 ? "adult" : "minor";    // the conditional operator (Python: a if c else b)
+1 === 1;                            // strict equality: no conversion (use this)
+1 == "1";                           // true: loose equality converts types (avoid it)
 ```
+
+* There is no walrus operator, but assignment is an expression, so `while ((m = re.exec(text)) !== null)` works
+* Prefer `===` and `!==` over `==` and `!=`; the loose forms convert types in surprising ways
 
 ---
 
@@ -718,7 +862,7 @@ x += 2
 The type system decides when a value's type is checked.
 
 * Dynamic typing (Python): types belong to values, not to names. A name can be rebound to any type, and type mistakes are found only when the offending line actually runs.
-* Static typing (Go): types belong to variables and expressions, are fixed, and are checked by the compiler before the program ever runs.
+* Static typing (TypeScript): types belong to variables and expressions, are fixed, and are checked by the compiler before the program ever runs. (The checked types are then erased, and the JavaScript that runs is dynamically typed.)
 
 ```python
 x = 10
@@ -732,30 +876,34 @@ add("a", "b")        # "ab"   same function, different types (duck typing)
 add(1, "b")          # TypeError, discovered only when this line executes
 ```
 
-```go
-var x int = 10
-// x = "ten"          // compile error: cannot use "ten" (untyped string constant) as int value in assignment
+```ts
+let x: number = 10;
+// x = "ten";          // compile error: Type 'string' is not assignable to type 'number'
 
-func add(a, b int) int { return a + b }
-// add("a", "b")      // compile error: cannot use "a" as int value in argument to add
+function add(a: number, b: number): number { return a + b; }
+// add("a", "b");      // compile error: Argument of type 'string' is not assignable to parameter of type 'number'
+
 ```
 
-Trade-off: dynamic typing is quick to write and flexible; static typing finds a whole class of bugs before shipping, makes refactoring safer, and lets tools autocomplete reliably, at the cost of more up-front declarations.
+Trade-off: dynamic typing is quick to write and flexible; static typing finds a whole class of bugs before shipping, makes refactoring safer, and lets tools autocomplete reliably, at the cost of more up-front declarations. TypeScript is called gradually typed: the escape hatches `any` and `as` let you opt out locally, which is useful when migrating JavaScript and dangerous when overused.
 
 ## Type Inference
 
 Inference means the compiler works out a type from the value, so you do not write it. It is not the same as dynamic typing: the type is still fixed at compile time.
 
-```go
-count := 10             // int
-price := 9.99           // float64
-name := "Go"            // string
-ok := true              // bool
-ch := 'a'               // rune (int32)
-items := []string{}     // []string
+```ts
+const count = 10;             // type: 10 (a literal type, because const cannot change)
+let total = 10;               // type: number (let can change, so it is widened)
+let price = 9.99;             // number
+const name = "TS";            // type: "TS"
+let ok = true;                // boolean
+const items: string[] = [];   // needs the annotation; a bare [] would be too vague
+const ch = "a";               // string: there is no char type
+const nums = [1, 2, 3];       // number[]
+const pair = [1, "a"];        // (string | number)[]   (use "as const" or a tuple type to keep positions)
 ```
 
-Inference in Go stops at function boundaries: parameters and return types must be written. Untyped constants get default types: `int`, `float64`, `rune`, `string`, `bool`.
+Inference stops at function boundaries: parameters must be annotated (except callbacks whose type comes from context, such as the argument of `.map`). The return type is inferred, but writing it on exported functions documents the contract and catches mistakes.
 
 Python never declares types at all. Type hints are optional documentation plus input for checkers such as `mypy` or `pyright`; Python itself ignores them at runtime:
 
@@ -766,12 +914,39 @@ def double(n: int) -> int:
 double("ab")        # runs fine and returns "abab"; mypy would flag it before you run it
 ```
 
+TypeScript's annotations are different in one way: the compiler enforces them, and a type error stops a strict build. In another way they are the same: like Python's hints, they are erased and never checked while the program runs.
+
+## Structural vs Nominal Typing
+
+TypeScript compares types by their shape, not by their name. If a value has the properties a type requires, it fits, no matter what it was declared as. This is the compile-time version of Python's duck typing.
+
+```ts
+interface Point { x: number; y: number }
+
+const p = { x: 1, y: 2, label: "origin" };
+const q: Point = p;                         // OK: p has x and y, which is all Point asks for
+
+function norm(pt: Point): number { return Math.hypot(pt.x, pt.y); }
+norm({ x: 3, y: 4 });                       // 5
+// norm({ x: 3, y: 4, label: "a" });        // compile error: object literals are checked for extra properties
+// norm({ x: 3 });                          // compile error: Property 'y' is missing
+```
+
+```python
+class Duck:
+    def quack(self): return "Quack"
+class Robot:
+    def quack(self): return "Beep"
+for thing in [Duck(), Robot()]:
+    print(thing.quack())            # Python checks nothing until this line runs
+```
+
 ## Strong vs Weak Typing
 
 This is a different question from static vs dynamic: how willing is the language to silently convert between unrelated types?
 
-* Strong: mixing incompatible types is an error. Python is strong but dynamic. Go is strong and static.
-* Weak: the language converts silently and keeps going, which hides bugs.
+* Strong: mixing incompatible types is an error. Python is strong but dynamic.
+* Weak: the language converts silently and keeps going, which hides bugs. JavaScript, the language TypeScript compiles to, is weak.
 
 ```python
 "1" + 1            # TypeError: can only concatenate str (not "int") to str
@@ -779,15 +954,24 @@ This is a different question from static vs dynamic: how willing is the language
 ```
 
 ```javascript
-// JavaScript (weakly typed), shown only for contrast
+// plain JavaScript (weakly typed), shown for contrast
 "1" + 1            // "11"   number silently turned into a string
 "5" - 2            // 3      string silently turned into a number
+[] + {}            // "[object Object]"
+```
+
+```ts
+// TypeScript's checker rejects the worst of these before the code runs
+// "5" - 2          // error TS2362: The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type
+"1" + 1;            // still allowed: "11"
 ```
 
 |  | Dynamic | Static |
 | :--- | :--- | :--- |
-| Strong | Python | Go |
-| Weak | JavaScript, PHP | C (and shell scripts treat everything as strings) |
+| Strong | Python | Rust, Java |
+| Weak | JavaScript, PHP | C, and TypeScript's runtime (it is JavaScript); the checker adds static rules on top |
+
+TypeScript sits between the boxes: the compiler is static and fairly strict, but it is deliberately not sound (`any`, type assertions, and unchecked array indexing can all lie), and the program that runs is JavaScript with all its coercions.
 
 ## Explicit vs Implicit Conversion
 
@@ -803,16 +987,26 @@ print(42)          # print() calls str() for you
 int("5")           # explicit: strings are never converted to numbers automatically
 ```
 
-Go has almost no implicit conversion. The exceptions are untyped constants adapting to their context, and a concrete value being assigned to an interface it satisfies. Everything else is `T(value)` (see Type Conversion in Go). Prefer explicit conversions: the reader sees exactly where a value changes type and where data may be lost (for example `float → int` truncation or overflow when narrowing).
+```ts
+1 + "2";                       // "12"   number turned into a string
+"3" * "4";                     // 12     JavaScript converts (TypeScript flags it as a compile error)
+if ("") { }                    // empty string is falsy
+if ([]) { /* runs */ }         // an empty array is truthy (Python: falsy)
+console.log(`${42}`);          // template literals call String() for you
 
-## None, nil, and NULL
+Number("5");                   // explicit
+```
+
+Falsy values in TypeScript/JavaScript: `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined`, `NaN`. Everything else is truthy, including `[]`, `{}`, and `"0"`. Prefer explicit conversions and explicit checks (`arr.length === 0`, `value === undefined`): the reader sees exactly where a value changes type and where data may be lost (for example `float → int` truncation, or `NaN`).
+
+## None, undefined, and null
 
 Each language needs a way to say "no value here". The name and the exact meaning differ:
 
 | Language | Name | What it is |
 | :--- | :--- | :--- |
 | Python | `None` | A single object of type `NoneType`; compare with `is None` |
-| Go | `nil` | The zero value of pointers, slices, maps, channels, functions, and interfaces; not available for `int`, `string`, `bool`, or structs |
+| TypeScript / JavaScript | `undefined` and `null` | Two separate values: `undefined` is "nothing was assigned or the property is missing", `null` is "deliberately empty"; with `strictNullChecks` the compiler tracks both |
 | C, C++, Java | `NULL` / `null` | A pointer or reference that points to nothing; using it crashes or throws |
 | SQL | `NULL` | "Unknown or missing"; `NULL = NULL` is not true, you must write `IS NULL` |
 
@@ -830,28 +1024,37 @@ user = None
 # user.name                      # AttributeError: 'NoneType' object has no attribute 'name'
 ```
 
-```go
-var p *int                       // nil
-var s []int                      // nil slice: safe to len(), range, and append
-var m map[string]int             // nil map: safe to read, panics on write
-// *p                            // panic: nil pointer dereference
-
-// Famous gotcha: a nil pointer stored in an interface is NOT a nil interface
-func find() error {
-    var e *MyError = nil
-    return e                     // the interface holds (type *MyError, value nil)
+```ts
+let result: string | null = null;
+if (result === null) {                          // use ===, not ==
+  console.log("nothing yet");
 }
-fmt.Println(find() == nil)       // false!  return a literal nil instead
+
+function noReturn(): void {}
+console.log(noReturn());                        // undefined: functions without return give back undefined
+
+// Classic bug
+const user: { name: string } | undefined = undefined as { name: string } | undefined;
+// user.name                                    // compile error: 'user' is possibly 'undefined' (a TypeError if it slipped through)
+user?.name;                                     // undefined: optional chaining stops at the first null/undefined
+user?.name ?? "anonymous";                      // "anonymous"
+
+// Famous gotchas
+typeof null;                                    // "object"   a historical bug in the language
+null == undefined;                              // true       loose equality treats them as equal
+null === undefined;                             // false
+0 || 5;                                         // 5          || replaces every falsy value
+0 ?? 5;                                         // 0          ?? replaces only null and undefined
 ```
 
-Always decide what "missing" means for each value: return an `error` or `(value, ok)` in Go, return `None` or raise an exception in Python, and check before you use it.
+Always decide what "missing" means for each value: return `T | undefined` or `T | null` (or a result object) in TypeScript, return `None` or raise an exception in Python, and check before you use it.
 
 ## Type Errors
 
 A type error means an operation was applied to a value of the wrong type.
 
 * Python reports it at run time as `TypeError` (or `AttributeError`, `ValueError`) on the line that executes
-* Go reports almost all of them at compile time; the ones left are type assertions (`i.(string)` panics when the dynamic type is different) and nil dereferences
+* TypeScript reports almost all of them at compile time; the ones left come from `any`, type assertions (`as`), and data that came from outside (`JSON.parse`, network responses, user input) that did not match its declared type
 
 ```python
 len(5)                    # TypeError: object of type 'int' has no len()
@@ -859,14 +1062,20 @@ len(5)                    # TypeError: object of type 'int' has no len()
 int([1, 2])               # TypeError: int() argument must be a string, a bytes-like object or a real number
 ```
 
-```go
-var v any = "hello"
-s := v.(string)           // ok
-n := v.(int)              // panic: interface conversion: interface {} is string, not int
-n, ok := v.(int)          // safe form: ok is false, no panic
+```ts
+const v: unknown = "hello";                 // unknown: must be checked before use
+// v.toUpperCase();                         // compile error: 'v' is of type 'unknown'
+if (typeof v === "string") {
+  v.toUpperCase();                          // fine: narrowed to string inside the if
+}
+
+const n = v as number;                      // compiles! an assertion is a promise, not a check
+// n.toFixed(2);                            // TypeError at run time: n.toFixed is not a function
+
+const data = JSON.parse('{"age": "twelve"}') as { age: number };   // the compiler believes you
 ```
 
-Habit that prevents most type errors in Python: add type hints, run `mypy` or `pyright` in CI, and validate data at the program's edges (user input, files, APIs).
+Habit that prevents most type errors: turn on `strict`, avoid `any` (use `unknown` and narrow it), and validate data at the program's edges (user input, files, APIs) with a schema library such as Zod or Valibot. In Python the same habit is: add type hints, run `mypy` or `pyright` in CI, and validate data at the edges.
 
 ---
 
@@ -902,57 +1111,68 @@ match command:
         print("unknown")
 ```
 
-## if and switch in Go
+## if and switch in TypeScript
 
-```go
-age := 20
+```ts
+const age = 20;
 
-if age < 13 {                    // no parentheses; braces are mandatory
-    fmt.Println("child")
-} else if age < 18 {
-    fmt.Println("teen")
+if (age < 13) {                      // parentheses are required; braces are optional but recommended
+  console.log("child");
+} else if (age < 18) {
+  console.log("teen");
 } else {
-    fmt.Println("adult")
+  console.log("adult");
 }
 
-// init statement: n is scoped to the whole if/else chain
-if n, err := strconv.Atoi("42"); err != nil {
-    fmt.Println("bad number:", err)
-} else if n > 40 {
-    fmt.Println("big", n)
+// Truthiness exists (falsy: false, 0, "", null, undefined, NaN), but an empty array is TRUTHY
+const items: number[] = [];
+if (items.length === 0) {            // check emptiness explicitly
+  console.log("empty");
 }
 
-// The condition must be a bool: there is no truthiness in Go
-items := []int{}
-// if items { }                  // compile error
-if len(items) == 0 {
-    fmt.Println("empty")
+// Ternary: the TypeScript version of Python's "a if c else b"
+const label = age >= 18 ? "adult" : "minor";
+
+// switch: a case FALLS THROUGH into the next one unless you break (the opposite of Python's match)
+const day = "sat";
+switch (day) {
+  case "sat":
+  case "sun":                        // two labels sharing one body (grouping by falling through)
+    console.log("weekend");
+    break;
+  case "fri":
+    console.log("almost");
+    break;                           // forget this and the code runs on into the next case
+  default:
+    console.log("weekday");
 }
 
-// switch: no break needed, a case never falls into the next one
-day := "sat"
-switch day {
-case "sat", "sun":
-    fmt.Println("weekend")
-case "fri":
-    fmt.Println("almost")
-    fallthrough                  // explicit opt-in to continue into the next case
-default:
-    fmt.Println("weekday")
-}
-
-// switch with no expression: a tidy if/else chain
-switch {
-case age < 13:
-    fmt.Println("child")
-case age < 18:
-    fmt.Println("teen")
-default:
-    fmt.Println("adult")
+// switch (true): a tidy if/else chain
+switch (true) {
+  case age < 13: console.log("child"); break;
+  case age < 18: console.log("teen"); break;
+  default: console.log("adult");
 }
 ```
 
-Go has no ternary operator (`a if c else b` in Python); write a normal `if`.
+Narrowing is TypeScript's version of pattern matching: after a check, the compiler knows the narrower type. With a discriminated union (every variant has a literal `kind` field) a `switch` can be checked for completeness:
+
+```ts
+type Shape =
+  | { kind: "circle"; radius: number }
+  | { kind: "rect"; width: number; height: number };
+
+function area(s: Shape): number {
+  switch (s.kind) {
+    case "circle": return Math.PI * s.radius ** 2;      // s is the circle variant here
+    case "rect":   return s.width * s.height;           // s is the rect variant here
+    default: {
+      const _exhaustive: never = s;                     // compile error if a new variant is added and not handled
+      return _exhaustive;
+    }
+  }
+}
+```
 
 ---
 
@@ -1072,73 +1292,89 @@ total = sum(x for x in range(10))              # generator expression loop
 matrix = [[i*j for j in range(3)] for i in range(3)]   # nested loop comprehension
 ```
 
-## Loops in Go
+## Loops in TypeScript
 
-Go has exactly one loop keyword, `for`, which covers every form: counting, while, infinite, and iterating.
+TypeScript has the C-style `for`, `while`, and `do...while`, plus `for...of` for iterating values, which is the one you will use most.
 
-```go
+```ts
 // classic three-part loop
-for i := 0; i < 5; i++ {
-    fmt.Println(i)                 // 0 1 2 3 4
+for (let i = 0; i < 5; i++) {
+  console.log(i);                  // 0 1 2 3 4
 }
 
-// while loop: only the condition
-n := 5
-for n > 0 {
-    n--
+// while loop and do...while (the body runs at least once)
+let n = 5;
+while (n > 0) {
+  n--;
 }
+do { n++; } while (n < 3);
 
 // infinite loop with controlled exit
-count := 0
-for {
-    count++
-    if count > 3 {
-        break
-    }
+let count = 0;
+while (true) {
+  count++;
+  if (count > 3) break;
 }
 
-// range over an integer (Go 1.22+)
-for i := range 3 {
-    fmt.Println(i)                 // 0 1 2
+// there is no range(): build the numbers
+Array.from({ length: 5 }, (_, i) => i);        // [0, 1, 2, 3, 4]
+Array.from({ length: 3 }, (_, i) => i + 2);    // [2, 3, 4]  (range(2, 5))
+[...Array(5).keys()];                          // [0, 1, 2, 3, 4]
+
+// for...of: iterate VALUES of any iterable (array, string, Map, Set, generator)
+const fruits = ["apple", "banana", "cherry"];
+for (const fruit of fruits) {
+  console.log(fruit);
+}
+for (const [index, fruit] of fruits.entries()) {     // enumerate
+  console.log(index, fruit);
+}
+for (const ch of "héllo") {}                         // iterates code points
+
+// for...in: iterates property NAMES (keys) of an object; avoid it on arrays
+const d = { a: 1, b: 2 };
+for (const key in d) {
+  console.log(key);                                  // "a", "b"
+}
+for (const [key, value] of Object.entries(d)) {      // the better way to loop over an object
+  console.log(key, value);
 }
 
-// range over a slice: index and value
-fruits := []string{"apple", "banana", "cherry"}
-for index, fruit := range fruits {
-    fmt.Println(index, fruit)
-}
-for _, fruit := range fruits {}    // _ discards the index
-for i := range fruits {}           // index only
-
-// range over a map: order is random on purpose
-d := map[string]int{"a": 1, "b": 2}
-for key, value := range d {
-    fmt.Println(key, value)
+// Map and Set
+const m = new Map([["a", 1], ["b", 2]]);
+for (const [key, value] of m) {
+  console.log(key, value);
 }
 
-// range over a string: yields (byte index, rune)
-for i, r := range "héllo" {
-    fmt.Println(i, string(r))
-}
+// zip: no built-in; use the index
+const names = ["Alice", "Bob"];
+const scores = [90, 85];
+names.forEach((name, i) => console.log(name, scores[i]));   // Alice 90, Bob 85
 
 // continue and break, with a label to leave an outer loop
 outer:
-for i := 0; i < 3; i++ {
-    for j := 0; j < 3; j++ {
-        if j == 1 {
-            continue outer         // next iteration of the OUTER loop
-        }
-        if i == 2 {
-            break outer            // leave both loops
-        }
-        fmt.Println(i, j)
-    }
+for (let i = 0; i < 3; i++) {
+  for (let j = 0; j < 3; j++) {
+    if (j === 1) continue outer;       // next iteration of the OUTER loop
+    if (i === 2) break outer;          // leave both loops
+    console.log(i, j);
+  }
 }
 ```
 
-* Go has no `while`, no `do-while`, no loop `else`, and no comprehensions; write the loop and append to a slice
-* `range` copies the value each iteration, so changing `v` in `for _, v := range items` does not change the slice; use the index (`items[i] = ...`)
-* Since Go 1.22 each iteration gets its own loop variable (this matters for closures and goroutines started inside the loop)
+* TypeScript has no loop `else`, no `pass` (an empty `{}` is fine), and no comprehensions; use `map`, `filter`, `reduce`, `flatMap` instead
+* `forEach` cannot be stopped with `break` or `return`, and it does not wait for `async` callbacks; use `for...of` when you need either
+* `for (const x of arr)` hands you a copy of the value for primitives, but objects are references, so changing `x.field` changes the object in the array
+* `let` in a `for` loop gives every iteration its own variable (this matters for closures; see Scope and Lifetime)
+
+```ts
+const squares = Array.from({ length: 5 }, (_, i) => i * i);          // list comprehension
+const evens = [1, 2, 3, 4].filter((x) => x % 2 === 0);               // with a condition
+const total = [1, 2, 3].reduce((acc, x) => acc + x, 0);              // sum(...)
+const flat = [[1, 2], [3, 4]].flatMap((row) => row);                 // [1, 2, 3, 4]
+const matrix = Array.from({ length: 3 }, (_, i) =>
+  Array.from({ length: 3 }, (_, j) => i * j));                       // nested comprehension
+```
 
 ---
 
@@ -1233,61 +1469,81 @@ with open("data.txt", "r", encoding="utf-8") as f:   # always pass encoding for 
     text = f.read()
 ```
 
-## Strings in Go
+## Strings in TypeScript
 
-A Go string is an immutable sequence of bytes, usually UTF-8 text. `len` counts bytes, not characters. A `rune` is one Unicode code point.
+A TypeScript `string` is an immutable sequence of UTF-16 code units. `length` counts code units, not characters, so characters outside the basic range (most emoji) count as two. Spreading or iterating a string walks code points instead.
 
-```go
-s := "héllo"
-len(s)                     // 6   bytes
-len([]rune(s))             // 5   runes (characters)
-utf8.RuneCountInString(s)  // 5   same, without allocating
-s[1]                       // 195 a single BYTE, not a character
-// s[0] = 'H'              // compile error: strings are immutable
+```ts
+const s = "héllo";
+s.length;                          // 5   code units (é is one unit here)
+const emoji = "😀";
+emoji.length;                      // 2   one character, two UTF-16 units
+[...emoji].length;                 // 1   spreading iterates code points
+s[1];                              // "é" indexing gives a one-character string (no char type)
+// s[0] = "H";                     // compile error: Cannot assign to '0' because it is a read-only property
+"H" + s.slice(1);                  // "Héllo"  build a new string
 
-for i, r := range s {      // range decodes UTF-8: i = byte offset, r = rune
-    fmt.Println(i, string(r))
+const bytes = new TextEncoder().encode(s);     // Uint8Array: UTF-8 bytes
+bytes.length;                                  // 6
+new TextDecoder("utf-8").decode(bytes);        // "héllo"
+
+const multi = `line one
+line two`;                         // template literal: multi-line, and ${...} interpolation
+```
+
+```ts
+"  Hello World  ".trim();                  // "Hello World"   (trimStart / trimEnd too)
+"ts".toUpperCase();                        // "TS"
+"TS".toLowerCase();                        // "ts"
+"a,b,c".split(",");                        // ["a", "b", "c"]
+"dog  cat".split(/\s+/);                   // ["dog", "cat"]  (split on any whitespace, like Python split())
+["a", "b"].join("-");                      // "a-b"
+"hello".includes("ell");                   // true
+"hello".startsWith("he");                  // true
+"hello".endsWith("lo");                    // true
+"hello".indexOf("l");                      // 2   (-1 if not found)
+"banana".split("a").length - 1;            // 3   count occurrences
+"a-b-c".replaceAll("-", "+");              // "a+b+c"
+"ab".repeat(3);                            // "ababab"
+"abc".padStart(5, "0");                    // "00abc"   (Python zfill)
+"abc".at(-1);                              // "c"       negative index with .at()
+```
+
+Slicing uses `slice(start, end)`; `end` is excluded, and negative indexes count from the end, as in Python. There is no step argument, so reversing takes a few calls.
+
+```ts
+const t = "Programming";
+t.slice(0, 6);                             // "Progra"
+t.slice(-6, -1);                           // "rammin"
+t.slice(4);                                // "ramming"
+[...t].reverse().join("");                 // "gnimmargorP"  (Python: t[::-1])
+[...t].filter((_, i) => i % 2 === 0).join("");   // "Pormig"  (Python: t[::2])
+```
+
+```ts
+// Building a string in a loop: collect the pieces and join once
+const parts: string[] = [];
+for (let i = 0; i < 3; i++) {
+  parts.push(`${i},`);
 }
-
-raw := `C:\path\file.txt
-second line`               // backticks = raw multi-line string, no escapes
+const result = parts.join("");             // "0,1,2,"
+// (+= on strings is also fast in modern engines, but joining is the clearest habit for big loops)
 ```
 
-```go
-import "strings"
+Formatting uses template literals, the TypeScript version of f-strings, plus `toFixed`, `padStart`, and `Intl`:
 
-strings.ToUpper("go")                // "GO"
-strings.TrimSpace("  hi  ")          // "hi"
-strings.Split("a,b,c", ",")          // ["a" "b" "c"]
-strings.Fields("dog  cat")           // ["dog" "cat"]  (splits on any whitespace, like Python split())
-strings.Join([]string{"a", "b"}, "-") // "a-b"
-strings.Contains("hello", "ell")     // true
-strings.HasPrefix("hello", "he")     // true
-strings.Index("hello", "l")          // 2   (-1 if not found)
-strings.Count("banana", "a")         // 3
-strings.ReplaceAll("a-b-c", "-", "+") // "a+b+c"
-strings.Repeat("ab", 3)              // "ababab"
-```
-
-```go
-// Building a string in a loop: use strings.Builder, not += (each += copies the whole string)
-var sb strings.Builder
-for i := 0; i < 3; i++ {
-    fmt.Fprintf(&sb, "%d,", i)
-}
-result := sb.String()                // "0,1,2,"
-```
-
-Formatting uses `fmt` verbs, the Go version of f-strings:
-
-```go
-name, age, price := "Bob", 30, 3.14159
-fmt.Printf("%s is %d years old\n", name, age)   // Bob is 30 years old
-fmt.Printf("%.2f\n", price)                      // 3.14
-fmt.Printf("%08.3f|%5d|%-5d|\n", price, age, age) // 0003.142|   30|30   |
-fmt.Printf("%v %+v %T\n", pt, pt, pt)            // value, value with field names, type
-fmt.Printf("%q %x %b %c\n", "hi", 255, 5, 'A')   // "hi" ff 101 A
-msg := fmt.Sprintf("%s-%d", name, age)           // build a string without printing
+```ts
+const name = "Bob", age = 30, price = 3.14159;
+console.log(`${name} is ${age} years old`);        // Bob is 30 years old
+console.log(`Next year: ${age + 1}, ${name.toUpperCase()}`);   // expressions inside ${}
+price.toFixed(2);                                  // "3.14"   (Python :.2f)
+String(7).padStart(3, "0");                        // "007"    (Python :03)
+(1000000).toLocaleString("en-US");                 // "1,000,000"   (Python :,)
+(0.75).toLocaleString("en-US", { style: "percent" });   // "75%"
+new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(1234.5);   // "$1,234.50"
+console.log("%s is %d", name, age);                // console.log understands %s %d %o placeholders
+console.log({ name, age });                        // prints the object: { name: 'Bob', age: 30 }
+console.log(JSON.stringify({ name, age }, null, 2));   // pretty-printed JSON
 ```
 
 ---
@@ -1317,9 +1573,45 @@ isnumeric()                # same as digit() but include fractions
 isspace()                  # Check space
 ```
 
+## Math in TypeScript
+
+```ts
+Math.abs(-5);                    // 5
+Math.pow(2, 10);                 // 1024   (or 2 ** 10)
+Math.sqrt(16);                   // 4
+Math.cbrt(27);                   // 3
+Math.ceil(4.1);                  // 5
+Math.floor(4.9);                 // 4
+Math.round(3.14159 * 100) / 100; // 3.14   there is no round(x, digits); scale, round, scale back (or toFixed)
+Math.max(3, 7, 2);               // 7
+Math.min(3, 7, 2);               // 2
+Math.max(...[3, 7, 2]);          // spread an array into the arguments
+[1, 2, 3].reduce((a, b) => a + b, 0);    // 6   (sum)
+[Math.floor(9 / 2), 9 % 2];      // [4, 1]   (divmod)
+Math.hypot(3, 4);                // 5
+Math.PI; Math.E;
+Math.random();                   // a float in [0, 1); not cryptographically secure (use crypto.randomUUID / getRandomValues)
+Math.floor(Math.random() * 10) + 1;     // random integer 1..10 (Python randint(1, 10))
+
+// gcd and lcm are not built in
+const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+const lcm = (a: number, b: number): number => (a / gcd(a, b)) * b;
+gcd(24, 36);                     // 12
+lcm(12, 18);                     // 36
+
+// checks (the string checks Python offers as methods are regular expressions here)
+Number.isInteger(5.0);           // true
+Number.isFinite(1 / 0);          // false
+Number.isNaN(NaN);               // true
+/^[a-z0-9]+$/i.test("abc123");   // true   isalnum
+/^[a-z]+$/i.test("abc");         // true   isalpha
+/^\d+$/.test("123");             // true   isdigit
+/^\s+$/.test("   ");             // true   isspace
+```
+
 ## Precision, Overflow and Rounding
 
-Python integers have unlimited size, so they never overflow. Floats are IEEE 754 binary numbers, so many decimals cannot be stored exactly. Go integers have a fixed size and wrap around silently.
+Python integers have unlimited size, so they never overflow. Floats are IEEE 754 binary numbers, so many decimals cannot be stored exactly. TypeScript's `number` is always one of those 64-bit floats: there is no separate integer type, so whole numbers lose exactness past 2^53, and there is no wrap-around overflow. For true big integers there is `bigint`.
 
 ```python
 2 ** 100                      # 1267650600228229401496703205376  (no overflow)
@@ -1335,36 +1627,40 @@ round(2.5), round(3.5)        # 2 4    rounds half to even ("banker's rounding")
 float("nan") == float("nan")  # False  NaN is never equal to anything, even itself
 ```
 
-```go
-var u uint8 = 255
-u++                            // 0     wraps around, no error
-var i8 int8 = 127
-i8++                           // -128  wraps around, no error
-fmt.Println(math.MaxInt64)     // 9223372036854775807
+```ts
+Number.MAX_SAFE_INTEGER;                  // 9007199254740991  (2^53 - 1): the largest integer that is always exact
+9007199254740992 === 9007199254740993;    // true!  beyond that, neighbouring integers collapse into one value
+Number.isSafeInteger(2 ** 53);            // false
+2 ** 1024;                                // Infinity  (no wrap-around, it just overflows to Infinity)
 
-a, b := 0.1, 0.2
-fmt.Println(a + b)             // 0.30000000000000004  same IEEE 754 behavior
-fmt.Println(0.1 + 0.2)         // 0.3   constants are computed exactly at compile time
+const a = 0.1, b = 0.2;
+a + b;                                    // 0.30000000000000004  same IEEE 754 behavior as Python
+a + b === 0.3;                            // false
+Math.abs(a + b - 0.3) < Number.EPSILON;   // true   compare floats with a tolerance
+(0.1 + 0.2).toFixed(2);                   // "0.30"  a string for display, not a fix for the maths
 
-zero := 0
-// fmt.Println(10 / zero)      // panic: runtime error: integer divide by zero  (a literal "/ 0" is a compile error)
-fzero := 0.0
-fmt.Println(10 / fzero)        // +Inf  floats do not panic
+10 / 0;                                   // Infinity   no exception (Python raises ZeroDivisionError)
+-10 / 0;                                  // -Infinity
+0 / 0;                                    // NaN
+NaN === NaN;                              // false  NaN is never equal to anything, even itself
+Number.isNaN(NaN);                        // true   (the global isNaN("abc") converts first: avoid it)
+Object.is(NaN, NaN);                      // true
 
-// huge numbers: math/big
-two := big.NewInt(2)
-two.Exp(two, big.NewInt(100), nil)
-fmt.Println(two)               // 1267650600228229401496703205376
+// huge numbers: bigint (suffix n); it cannot be mixed with number
+2n ** 100n;                               // 1267650600228229401496703205376n
+BigInt(Number.MAX_SAFE_INTEGER) + 2n;     // 9007199254740993n  exact
+// 2n ** 100n + 1                         // compile error: cannot mix bigint and number
+// Math.sqrt(4n)                          // compile error: Math works on number only
 
-math.Sqrt(16)                  // 4
-math.Pow(2, 10)                // 1024
-math.Floor(4.9)                // 4
-math.Ceil(4.1)                 // 5
-math.Round(2.5)                // 3   Go rounds half away from zero (Python rounds half to even)
-math.Abs(-5)                   // 5
+Math.round(2.5);                          // 3   rounds half toward +Infinity (Python rounds half to even)
+Math.round(-2.5);                         // -2  (so negative halves round "up", toward zero)
+Math.round(3.5);                          // 4
+Math.trunc(-3.7);                         // -3
+Math.floor(-7 / 2);                       // -4  same as Python's -7 // 2
+-7 % 3;                                   // -1  % takes the sign of the dividend (Python gives 2)
 ```
 
-Money: never use floats. Store integer cents (`int64`), or use `Decimal` in Python.
+Money: never use floats. Store integer cents (`number` is exact for whole numbers up to 2^53, or use `bigint`), or use a decimal library such as `decimal.js` in TypeScript and `Decimal` in Python.
 
 ---
 
@@ -1500,7 +1796,7 @@ Rules and gotchas:
 
 * A tuple key is a flat alternative to nested dicts: `sales[("Delhi", 2025)]` vs `sales["Delhi"][2025]`. Tuple keys are simpler to write and check; nested dicts are easier to loop over one level.
 * Use `collections.namedtuple` as the key when you want readable fields: `Point(x=1, y=2)`.
-* In Go the equivalent is an array or struct key: `map[[2]int]string` or `map[Point]string`.
+* In TypeScript a `Map` compares object keys by reference, so an array used as a key does not work directly; the usual equivalent is a string key such as `` `${row},${col}` `` (see Maps and Sets in TypeScript).
 
 ## Sets
 
@@ -1516,123 +1812,204 @@ s1.add(10)
 s1.discard(1)
 ```
 
-## Arrays and Slices in Go
+## Arrays and Tuples in TypeScript
 
-An array has a fixed length that is part of its type. A slice is a flexible view over an array and is what Go code uses almost everywhere (it plays the role of Python's list).
+A TypeScript array plays the role of Python's list: ordered, mutable, and able to grow. A tuple type is an array whose length and element types are fixed in the type, which is how TypeScript models Python's tuples (at run time a tuple is still an ordinary array).
 
-```go
-var a [3]int              // [0 0 0]
-b := [3]int{1, 2, 3}
-c := [...]int{1, 2, 3, 4} // the compiler counts the elements
-// [3]int and [4]int are different types, and arrays are values:
-d := b                    // copies all three elements
-d[0] = 99                 // b is unchanged
+```ts
+const lst: number[] = [3, 1, 4, 1, 5];        // also Array<number>
+
+lst.push(9);                  // add to end
+lst.unshift(0);               // add to the front
+lst.splice(1, 0, 100);        // insert 100 at index 1 (splice(start, deleteCount, ...items))
+lst.splice(lst.indexOf(1), 1);// remove the first matching value
+lst.pop();                    // remove and return the last item
+lst.shift();                  // remove and return the first item
+lst.splice(2, 1);             // remove the item at index 2
+lst.indexOf(4);               // find index of a value (-1 if missing)
+lst.includes(4);              // true: membership test (Python: 4 in lst)
+lst.at(-1);                   // last item (Python lst[-1])
+lst.length;                   // len(lst)
+lst.concat([7, 8]);           // new array with both (also [...lst, 7, 8])
+lst.push(...[7, 8]);          // extend in place
+
+// sorting: the DEFAULT sort compares as STRINGS
+[10, 2, 1].sort();                          // [1, 10, 2]   surprise!
+[10, 2, 1].sort((a, b) => a - b);           // [1, 2, 10]   always pass a comparator for numbers
+[10, 2, 1].sort((a, b) => b - a);           // [10, 2, 1]   descending
+const sorted = [...lst].sort((a, b) => a - b);   // sort() changes the array in place; copy first for sorted()
+lst.toSorted((a, b) => a - b);              // returns a new array (ES2023; also toReversed, toSpliced, with)
+lst.reverse();                              // reverse in place
+
+// searching and testing
+lst.find((x) => x > 3);                     // first match or undefined
+lst.findIndex((x) => x > 3);
+lst.some((x) => x > 3);                     // any([...])
+lst.every((x) => x > 0);                    // all([...])
+lst.filter((x) => x % 2 === 0).length;      // count occurrences that match
 ```
 
-A slice is a small struct of three fields: a pointer to an underlying array, a length, and a capacity.
-
-```go
-s := []int{1, 2, 3}          // len 3, cap 3
-t := make([]int, 3, 10)      // len 3, cap 10 (room to grow without reallocating)
-fmt.Println(len(s), cap(s))  // 3 3
-
-s = append(s, 4)             // ALWAYS assign the result of append
-s = append(s, 5, 6)
-s = append(s, t...)          // append another slice with ...
-copy(t, s)                   // copy elements into an existing slice
-
-sub := s[1:3]                // like Python slicing, but it SHARES the same underlying array
-sub[0] = 100                 // s[1] is now 100 too
-clone := slices.Clone(s)     // independent copy (Go 1.21+)
-
-s = append(s[:1], s[2:]...)  // delete the element at index 1
-s = slices.Delete(s, 1, 2)   // same idea, helper version
-
-var nilSlice []int           // nil slice: len 0, but append and range work
-empty := []int{}             // empty, non-nil slice; len 0 too
-len(nilSlice) == 0           // check emptiness with len, not == nil
+```ts
+// Tuples: fixed length, a type for each position
+const t: [number, string, boolean] = [1, "a", true];
+const [a, b, c] = t;                         // destructuring (unpacking)
+const t2 = [...t, 4] as const;               // "concatenation" makes a new array
+// t[3];                                     // compile error: tuple of length 3 has no element at index 3
+const frozen: readonly number[] = [1, 2, 3]; // readonly array: the compiler forbids push/sort/assignment
+// frozen.push(4);                           // compile error: Property 'push' does not exist on type 'readonly number[]'
 ```
 
-### What Happens When append Exceeds Capacity
+### Arrays Grow by Themselves
 
-If there is spare capacity, `append` writes into the same underlying array. When the length would exceed the capacity, Go allocates a new, larger array, copies the elements over, and returns a slice pointing at the new array. The old array is left untouched. Growth is roughly doubling for small slices and slower for large ones; the exact rule is an implementation detail.
+There is no capacity to manage and no "append may reallocate" rule: the JavaScript engine grows the array's storage for you, and `push` always changes the array you called it on. What you do need to know is which operations change the array in place and which return a new one.
 
-```go
-a := make([]int, 3, 3)       // len 3, cap 3 (full)
-b := append(a, 4)            // exceeds capacity: new array allocated
-b[0] = 100
-fmt.Println(a[0])            // 0    a still points at the OLD array
+```ts
+const a = [1, 2, 3];
+const b = a;                  // another name for the SAME array (like Python)
+b.push(4);                    // a is [1, 2, 3, 4] too
 
-c := make([]int, 3, 10)      // len 3, cap 10
-d := append(c, 4)            // fits: same array reused
-d[0] = 100
-fmt.Println(c[0])            // 100  c and d share memory
+const copy = [...a];          // shallow copy (also a.slice() or Array.from(a)); Python: a.copy() / a[:]
+const nested = [[1, 2], [3, 4]];
+const shallow = [...nested];  // inner arrays are still shared
+const deep = structuredClone(nested);   // real deep copy
+nested[0].push(99);
+shallow[0];                   // [1, 2, 99]  shared
+deep[0];                      // [1, 2]      independent
+
+// In place (changes the array):  push pop shift unshift splice sort reverse fill
+// New array (leaves it alone):   slice concat map filter flat flatMap toSorted toReversed toSpliced with
+a.length = 0;                 // empties the array in place
+const holes = new Array(3);   // [ <3 empty items> ]: holes, not undefined values (use .fill(0))
+delete a[0];                  // leaves a HOLE and does not shift anything: use splice instead
 ```
 
-Consequences: always write `s = append(s, x)`; do not assume two slices share (or do not share) memory after an append; use `slices.Clone` or `copy` when you need an independent copy; preallocate with `make([]T, 0, n)` when you know the size. A function that appends to a slice parameter changes only its local copy of the slice header, so return the new slice.
+Because arrays are objects, a function that receives an array can change the caller's array (`arr.push(1)` is visible outside), but reassigning the parameter (`arr = []`) is not. This is the same "pass by object reference" behavior as in Python.
 
-```go
-func add(s []int) { s = append(s, 1) }       // caller does NOT see the new element
-func add2(s []int) []int { return append(s, 1) } // caller does: nums = add2(nums)
+```ts
+function mutate(arr: number[]) { arr.push(1); }     // the caller sees the change
+function rebind(arr: number[]) { arr = [9]; }       // only the local name is rebound
+const data: number[] = [];
+mutate(data);                                       // data is [1]
+rebind(data);                                       // data is still [1]
 ```
 
-## Maps in Go
+Indexing past the end gives `undefined`, not an error (`lst[10]`). With `noUncheckedIndexedAccess` turned on in `tsconfig.json`, the compiler types `lst[i]` as `number | undefined` and makes you handle that case.
 
-```go
-m := map[string]int{"a": 1, "b": 2}
-m2 := make(map[string]int)   // empty, ready to use
+## Objects, Maps and Sets in TypeScript
 
-m["c"] = 3                   // insert or update
-v := m["z"]                  // 0: a missing key returns the zero value
-v, ok := m["z"]              // comma-ok form: ok is false when the key is missing
-delete(m, "a")               // no error if the key does not exist
-len(m)
+TypeScript has two dictionary-like tools. A plain object (`{}`) is the everyday choice for records with known field names (like a Python dict used as a record). A `Map` is the real hash table: any type of key, insertion order, a `size`, and no prototype surprises.
 
-for k, v := range m {        // iteration order is random
-    fmt.Println(k, v)
+```ts
+// Plain object as a dict
+const d: Record<string, number> = { a: 1, b: 2 };   // Record<string, number>: any string key, number values
+
+d["c"] = 3;                       // insert or update (also d.c = 3)
+d["z"];                           // undefined: a missing key does not throw (Python raises KeyError)
+d["z"] ?? 0;                      // default value if key missing (Python: d.get("z", 0))
+"b" in d;                         // true: membership test (Object.hasOwn(d, "b") is stricter)
+delete d["a"];                    // remove a key
+Object.keys(d);                   // ["b", "c"]
+Object.values(d);                 // [2, 3]
+Object.entries(d);                // [["b", 2], ["c", 3]]
+Object.keys(d).length;            // len(d)
+const merged = { ...d, e: 5 };    // merge / update (Python: d1 | d2)
+Object.assign(d, { f: 6 });       // update in place
+
+for (const [key, value] of Object.entries(d)) {
+  console.log(key, value);
 }
 
-var nm map[string]int        // nil map
-_ = nm["x"]                  // reading is fine
-// nm["x"] = 1               // panic: assignment to entry in nil map (create it with make first)
+// Nested objects
+const nested: Record<string, { name: string; age: number }> = {
+  user1: { name: "Alice", age: 25 },
+  user2: { name: "Bob", age: 30 },
+};
+nested["user1"].name;                          // "Alice"
+nested["user2"].age = 31;                      // update a nested value
+nested["user3"] = { name: "Cara", age: 22 };   // add a new nested entry
+```
 
-// a set is a map with empty values
-seen := map[string]struct{}{}
-seen["go"] = struct{}{}
-_, found := seen["go"]       // true
+```ts
+// Map: the real hash map
+const m = new Map<string, number>([["a", 1], ["b", 2]]);
+
+m.set("c", 3);                   // insert or update
+m.get("z");                      // undefined when missing
+m.get("z") ?? 0;                 // default
+m.has("a");                      // true (needed when a stored value could itself be undefined)
+m.delete("a");                   // returns true if the key existed
+m.size;                          // number of entries (len)
+for (const [k, v] of m) {        // iteration is in insertion order
+  console.log(k, v);
+}
+[...m.keys()]; [...m.values()]; [...m.entries()];
+
+// defaultdict(int) / Counter-style counting
+const counts = new Map<string, number>();
+for (const ch of "mississippi") {
+  counts.set(ch, (counts.get(ch) ?? 0) + 1);
+}
+// Map(4) { 'm' => 1, 'i' => 4, 's' => 4, 'p' => 2 }
+
+// Set
+const s1 = new Set([1, 2, 3]);
+const s2 = new Set([2, 3, 4]);
+s1.add(10);
+s1.has(10);                      // true
+s1.delete(1);
+s1.size;
+const union = new Set([...s1, ...s2]);                       // {1,2,3,4}-style union
+const inter = new Set([...s1].filter((x) => s2.has(x)));     // intersection
+const diff  = new Set([...s1].filter((x) => !s2.has(x)));    // difference
+// newer runtimes also have s1.union(s2), s1.intersection(s2), s1.difference(s2): check your Node version
+const unique = [...new Set([1, 2, 2, 3])];                   // [1, 2, 3]  (remove duplicates)
 ```
 
 ### Key Constraints
 
-A map key type must be comparable, meaning `==` works on it: booleans, numbers, strings, pointers, channels, arrays of comparable types, and structs whose fields are all comparable. Slices, maps, and functions are not comparable, so they cannot be keys. This is the same idea as Python's "keys must be hashable".
+* A plain object accepts only string or symbol keys: a number key such as `d[1]` is converted to the string `"1"`, and an object used as a key becomes `"[object Object]"`
+* A plain object has a prototype, so `"toString" in {}` is `true`; use `Object.hasOwn(obj, key)`, or a `Map`, when keys come from user input
+* A `Map` or `Set` accepts any value as a key, but compares objects and arrays by reference (identity), not by contents. That makes it the opposite of Python's tuple keys
 
-Can a slice be a map key? No: `map[[]int]string` is a compile error (`invalid map key type []int`). Use an array (`[3]int`), a struct, or convert the slice to a string key.
+```ts
+const grid = new Map<[number, number], string>();
+grid.set([0, 0], "start");
+grid.get([0, 0]);                    // undefined!  a NEW array is a different key
 
-```go
-type Point struct{ X, Y int }
-grid := map[Point]string{{1, 2}: "tree"}     // struct key: fine
-visited := map[[2]int]bool{{0, 1}: true}     // array key: fine (like a tuple in Python)
-// bad := map[[]int]string{}                 // compile error
+// Fix 1: turn the composite key into a string
+const key = (r: number, c: number) => `${r},${c}`;
+const cells = new Map<string, string>([[key(0, 0), "start"], [key(2, 3), "wall"]]);
+cells.get(key(2, 3));                // "wall"
+cells.has(key(5, 5));                // false
 
-key := fmt.Sprint([]int{1, 2, 3})            // "[1 2 3]": a string key built from a slice
+// Fix 2: nested maps (or nested objects): sales.get("Delhi")?.get(2025)
+const sales = new Map<string, Map<number, number>>();
+
+// Fix 3: reuse ONE object instance as the key (identity is the point)
+const origin = { x: 0, y: 0 };
+const byPoint = new Map([[origin, "start"]]);
+byPoint.get(origin);                 // "start"
+
+new Map([[NaN, "x"]]).get(NaN);      // "x"  Map treats NaN as equal to NaN (unlike ===)
 ```
 
-### Reference-Like Behavior
+### Reference Behavior
 
-A map variable holds a reference to the runtime's hash table. Assigning or passing a map copies only that reference, so every copy sees the same data.
+Assigning or passing an object, array, `Map`, or `Set` copies only the reference, so every copy sees the same data. This matches Python.
 
-```go
-func rename(m map[string]int) { m["x"] = 99 }
+```ts
+function rename(m: Record<string, number>) { m["x"] = 99; }
 
-m := map[string]int{"x": 1}
-copyRef := m
-rename(m)
-fmt.Println(m["x"], copyRef["x"])     // 99 99
+const m1: Record<string, number> = { x: 1 };
+const alias = m1;
+rename(m1);
+console.log(m1["x"], alias["x"]);          // 99 99
 
-other := maps.Clone(m)                // real independent copy (maps package, Go 1.21+)
+const shallow = { ...m1 };                 // shallow copy (new Map(map) and new Set(set) do the same)
+const deep = structuredClone(m1);          // deep copy (works for Map and Set too)
 ```
 
-Maps are not safe for concurrent use: writing from two goroutines at once crashes the program (`fatal error: concurrent map writes`). Protect the map with a mutex, or use `sync.Map` for special cases. Struct values stored in a map are not addressable, so `m["k"].count++` does not compile; copy the value out, change it, and store it back.
+`WeakMap` and `WeakSet` hold their object keys weakly: when nothing else refers to the key, the entry disappears. Use them for caches and metadata attached to objects without causing memory leaks. JavaScript runs your code on one thread, so the "concurrent map writes" crash does not exist, but operations spread across `await` points can still interleave (see Concurrency in TypeScript).
 
 ---
 
@@ -1692,52 +2069,59 @@ match command:
         print("stop")
 ```
 
-## Enums in Go
+## Enums in TypeScript
 
-Go has no `enum` keyword. The idiom is a named type plus constants generated with `iota`.
+TypeScript has an `enum` keyword, but many teams prefer a union of string literals or an `as const` object, because both are plain JavaScript with no extra generated code. You will see all three.
 
-```go
-type Weekday int
-
-const (
-    Sunday Weekday = iota    // 0
-    Monday                   // 1
-    Tuesday                  // 2
-)
-
-func (d Weekday) String() string {      // fmt uses this when printing
-    switch d {
-    case Sunday:
-        return "Sunday"
-    case Monday:
-        return "Monday"
-    case Tuesday:
-        return "Tuesday"
-    }
-    return fmt.Sprintf("Weekday(%d)", int(d))
+```ts
+// 1. enum: numeric by default; the compiler generates a real object
+enum Weekday {
+  Sunday,       // 0
+  Monday,       // 1
+  Tuesday,      // 2
 }
+Weekday.Monday;             // 1
+Weekday[1];                 // "Monday"   numeric enums also map backwards (value -> name)
+// const w: Weekday = 7;   // compile error in TypeScript 5+ (but any plain number VARIABLE is still accepted: a known gap)
 
-fmt.Println(Monday)        // Monday
-fmt.Println(Weekday(9))    // Weekday(9): Go does NOT reject invalid values
+// string enum: values are strings (best for JSON/APIs); no reverse mapping
+enum Status {
+  Active = "active",
+  Disabled = "disabled",
+}
+Status.Active;              // "active"
+Object.values(Status);      // ["active", "disabled"]   iterate the members
+
+// 2. union of string literals: no run-time code at all
+type Direction = "up" | "down" | "left" | "right";
+let dir: Direction = "up";
+// dir = "sideways";        // compile error: Type '"sideways"' is not assignable to type 'Direction'
+
+// 3. const object + derived type: a runtime list AND a type
+const Color = { Red: 1, Green: 2, Blue: 3 } as const;
+type Color = (typeof Color)[keyof typeof Color];      // 1 | 2 | 3
+const c: Color = Color.Green;
+Object.keys(Color);         // ["Red", "Green", "Blue"]
 ```
 
-```go
-const (
-    _  = iota                // skip 0
-    KB = 1 << (10 * iota)    // 1024
-    MB                       // 1048576
-)
+```ts
+// Bit flags
+enum Perm {
+  Read = 1 << 0,            // 1
+  Write = 1 << 1,           // 2
+  Exec = 1 << 2,            // 4
+}
+const perm = Perm.Read | Perm.Write;
+(perm & Perm.Write) !== 0;  // true: check a flag
+perm & ~Perm.Write;         // clear a flag
 
-const (                      // bit flags
-    Read = 1 << iota         // 1
-    Write                    // 2
-    Exec                     // 4
-)
-perm := Read | Write
-perm&Write != 0              // true
+enum Size { KB = 1024, MB = 1024 * 1024 }       // computed values are allowed
+const enum Level { Debug = 10, Info = 20 }      // const enum: inlined at compile time, no object at run time
 ```
 
-> Start at `iota + 1` (or skip 0 with `_`) when you want the zero value to mean "unset".
+Use a union of string literals for simple sets of options, a string `enum` or `as const` object when you also need the values at run time, and avoid mixing numeric enums with raw numbers. Switch statements over a union or enum can be checked for completeness with a `never` assignment (see Conditionals).
+
+> Start numeric enums at `1` (or give explicit values) when you want `0` to mean "unset", since `0` is also falsy.
 
 ---
 
@@ -1803,32 +2187,74 @@ shallow[0]                  # [1, 2, 99]   the inner list is shared
 deep[0]                     # [1, 2]       independent
 ```
 
-## Equality in Go
+## Equality in TypeScript
 
-`==` compares values for comparable types. Structs and arrays compare field by field. Pointers compare addresses, which is identity. Slices, maps, and functions can only be compared to `nil`.
+`===` (strict equality) compares primitives by value and everything else (objects, arrays, functions, `Map`s) by reference, so it works like Python's `is` for objects. There is no built-in `==`-style "same contents" check for arrays or objects. The loose `==` converts types first and should be avoided.
 
-```go
-type P struct{ X, Y int }
+```ts
+const p1 = { x: 1, y: 2 };
+const p2 = { x: 1, y: 2 };
+const p3 = p1;
 
-p1, p2 := P{1, 2}, P{1, 2}
-fmt.Println(p1 == p2)           // true    value equality (field by field)
+p1 === p2;                    // false  two different objects, even with the same contents
+p1 === p3;                    // true   another name for the same object
+[1, 2] === [1, 2];            // false
+"ab" === "a" + "b";           // true   primitives (string, number, boolean, ...) compare by value
 
-pp1, pp2 := &p1, &p2
-fmt.Println(pp1 == pp2)         // false   different addresses (identity)
-fmt.Println(*pp1 == *pp2)       // true    compare the pointed-to values
+1 === 1;                      // true
+1 === "1";                    // false  no conversion with ===
+1 == "1";                     // true   loose equality converts: avoid
+null == undefined;            // true   (loose); null === undefined is false
 
-a, b := []int{1, 2}, []int{1, 2}
-// fmt.Println(a == b)          // compile error: slice can only be compared to nil
-fmt.Println(slices.Equal(a, b)) // true
-fmt.Println(maps.Equal(m1, m2)) // maps package
-fmt.Println(reflect.DeepEqual(a, b)) // deep comparison of anything (slower, use in tests)
-fmt.Println(bytes.Equal(x, y))  // for []byte
-
-var e1, e2 error = io.EOF, io.EOF
-e1 == e2                        // true: interfaces are equal if dynamic types and values are equal
+NaN === NaN;                  // false  NaN is never equal to anything, even itself
+Object.is(NaN, NaN);          // true   Object.is: like === except for NaN and -0
+Object.is(0, -0);             // false
 ```
 
-Go assignment copies values: struct and array assignment is a full copy, while slices, maps, and channels copy only their small header, so the data underneath is shared (a shallow copy). A deep copy of nested data is written by hand or with a library.
+To compare contents you have to write it, serialize, or use a library:
+
+```ts
+import { isDeepStrictEqual } from "node:util";            // built into Node.js
+import assert from "node:assert";
+
+isDeepStrictEqual([1, [2, 3]], [1, [2, 3]]);              // true   deep value comparison
+assert.deepStrictEqual({ a: 1 }, { a: 1 });               // throws if they differ (used in tests)
+JSON.stringify(p1) === JSON.stringify(p2);                // true, but key order matters, and it drops undefined/functions
+// libraries: lodash isEqual, fast-deep-equal
+
+const same = (a: number[], b: number[]) =>
+  a.length === b.length && a.every((v, i) => v === b[i]); // a hand-written comparison for simple arrays
+```
+
+You can give your own classes an `equals` method, but there is no `__eq__`: `===` always means identity for objects.
+
+```ts
+class Point {
+  constructor(public x: number, public y: number) {}
+  equals(other: Point): boolean { return this.x === other.x && this.y === other.y; }
+}
+new Point(1, 2).equals(new Point(1, 2));    // true
+new Point(1, 2) === new Point(1, 2);        // false
+```
+
+TypeScript's type checker compares types by structure (see Type Systems), but at run time, equality of values is the JavaScript rules above.
+
+## Assignment and Copying in TypeScript
+
+Assigning a primitive (`number`, `string`, `boolean`, `bigint`, `null`, `undefined`) copies the value. Assigning an object or array copies the reference, so both names see the same data, as in Python. The copy tools are shallow unless noted:
+
+```ts
+const a = [[1, 2], [3, 4]];
+const b = a;                          // same array
+const shallow = [...a];               // shallow: new outer array, SAME inner arrays (also a.slice())
+const shallowObj = { ...{ x: 1, nested: { y: 2 } } };   // shallow copy of an object
+const deep = structuredClone(a);      // deep copy: handles nested data, Map, Set, Date; not functions or class methods
+const viaJson = JSON.parse(JSON.stringify(a));          // old trick: loses Date, Map, undefined, functions
+
+a[0].push(99);
+shallow[0];                           // [1, 2, 99]  shared
+deep[0];                              // [1, 2]      independent
+```
 
 ---
 
@@ -1855,9 +2281,9 @@ Immutable objects (`int`, `str`, `tuple`) cannot be changed in place, so "modify
 ## Stack and Heap
 
 * The stack holds the data of function calls (local variables, return addresses). It is fast and cleaned up automatically when the function returns.
-* The heap holds data that must outlive a single call or whose size is not known up front. It needs a strategy to free memory: manual (C), garbage collected (Python, Go, Java), or ownership rules checked at compile time (Rust).
+* The heap holds data that must outlive a single call or whose size is not known up front. It needs a strategy to free memory: manual (C), garbage collected (Python, JavaScript/TypeScript, Java), or ownership rules checked at compile time (Rust).
 
-In CPython every object lives on the heap; local variables are references to it. In Go the compiler decides: values that cannot outlive the function stay on the stack, values whose address escapes (returned pointers, captured by closures, stored in interfaces) are moved to the heap. This is called escape analysis, and you can see its decisions with `go build -gcflags=-m`. You never choose between stack and heap in Go code; you only choose whether to use a pointer.
+In CPython every object lives on the heap; local variables are references to it. In TypeScript the JavaScript engine decides: objects, arrays, closures, and strings live on the heap, while small values such as numbers and booleans are often kept directly in registers or on the stack by the JIT compiler. You never choose between stack and heap in TypeScript code; you only choose between a primitive value and an object. The call stack is limited, though: very deep recursion ends with `RangeError: Maximum call stack size exceeded` (compare Python's `RecursionError`).
 
 ## Object Lifetime and Reference Counting (Python)
 
@@ -1896,8 +2322,8 @@ gc.collect()                     # force a collection (rarely needed)
 A garbage collector frees memory that the program can no longer reach. An object is reachable if some chain of references starts from a "root" (global variables, local variables on active call stacks) and leads to it.
 
 * Python: reference counting plus a generational cyclic collector. Most objects are freed the instant their last reference disappears.
-* Go: a concurrent, tri-color mark-and-sweep collector that runs alongside your goroutines with short pauses. You tune it with `GOGC` (how much the heap may grow before a cycle) and `GOMEMLIMIT` (a soft memory limit); `runtime.GC()` forces a cycle and `runtime.ReadMemStats` reports usage.
-* Go and Python both promise you cannot use freed memory (no use-after-free) and do not need `free()`.
+* TypeScript (V8, the engine in Node.js and Chrome): a generational tracing collector. New objects live in a small "young" area that is cleaned often and cheaply, survivors move to an "old" area that is cleaned with mark-and-sweep, mostly concurrently with your code. There is no reference counting, so cycles are never a problem. You tune it with Node flags such as `--max-old-space-size=4096` (heap limit in MB); you cannot normally force a collection (`global.gc()` exists only when Node is started with `--expose-gc`), and `process.memoryUsage()` reports usage.
+* Python and TypeScript both promise you cannot use freed memory (no use-after-free) and do not need `free()`.
 
 For contrast, manual memory management in C:
 
@@ -1918,7 +2344,7 @@ Common causes:
 * Global lists, dicts, or caches that only grow
 * Listeners, callbacks, or timers that are registered and never removed
 * Closures that capture large objects
-* Go only: goroutines blocked forever on a channel, `time.Ticker` never stopped, a small sub-slice that keeps a huge backing array alive
+* TypeScript only: `setInterval` that is never cleared, `addEventListener` / `emitter.on` without a matching remove, a `Map` used as a cache that never evicts, and (in browsers) detached DOM nodes that something still references
 * Not memory but just as bad: unclosed files, sockets, and database connections
 
 ```python
@@ -1937,54 +2363,69 @@ def get_user(user_id):
     return load_from_db(user_id)
 ```
 
-```go
-func leak() {
-    ch := make(chan int)
-    go func() {
-        v := <-ch                            // nobody ever sends: this goroutine lives forever
-        fmt.Println(v)
-    }()
+```ts
+const cache = new Map<number, User>();       // grows forever
+
+async function getUser(id: number): Promise<User> {
+  if (!cache.has(id)) {
+    cache.set(id, await loadFromDb(id));
+  }
+  return cache.get(id)!;
 }
 
-big := make([]byte, 100<<20)                 // 100 MB
-small := big[:10]                            // keeps all 100 MB alive
-small = append([]byte(nil), big[:10]...)     // copy what you need so big can be freed
-```
-
-Finding leaks: Python has `tracemalloc` and `objgraph`; Go has `runtime.NumGoroutine()` and pprof (`net/http/pprof`, then `go tool pprof`). If memory or goroutine count climbs steadily under constant load, something is leaking.
-
-## Pointers and Values in Go
-
-Python hides memory addresses behind references. Go has real pointers, but with no pointer arithmetic, and the garbage collector keeps everything a pointer refers to alive.
-
-```go
-x := 10
-p := &x            // & = address of: p has type *int
-fmt.Println(*p)    // 10   * = dereference: read the value p points to
-*p = 20            // writes through the pointer: x is now 20
-fmt.Println(x)     // 20
-
-q := new(int)      // *int pointing to a new zero int
-func newInt() *int {
-    v := 5
-    return &v      // safe: v escapes to the heap and lives as long as the pointer does
+// Fix: bound the cache (evict the oldest entry) or use a library such as lru-cache
+const MAX = 1024;
+function remember(id: number, user: User) {
+  cache.set(id, user);
+  if (cache.size > MAX) {
+    const oldest = cache.keys().next().value!;   // Maps remember insertion order
+    cache.delete(oldest);
+  }
 }
+
+// A leaked timer keeps its callback (and everything it captured) alive until cleared
+const timer = setInterval(() => poll(), 1000);
+clearInterval(timer);                        // always clear what you start
+
+const meta = new WeakMap<object, string>();  // entries vanish when the key object is collected
 ```
 
-Go always passes by value: a function receives a copy of every argument. Passing a pointer copies the pointer (a small address), and both copies point at the same data.
+Finding leaks: Python has `tracemalloc` and `objgraph`; Node.js has `process.memoryUsage()`, heap snapshots (`node --inspect`, then Chrome DevTools "Memory", or `v8.writeHeapSnapshot()`), and `--heapsnapshot-signal`. If memory climbs steadily under constant load, something is leaking.
 
-```go
-func incr(n int)      { n++ }        // changes a copy
-func incrPtr(n *int)  { *n++ }       // changes the original
+## Value vs Reference in TypeScript
 
-v := 1
-incr(v)         // v == 1
-incrPtr(&v)     // v == 2
+Python hides memory addresses behind references, and so does TypeScript: there are no pointers, no `&`, and no pointer arithmetic. Instead the language splits values into two groups.
+
+* Primitives (`number`, `string`, `boolean`, `bigint`, `symbol`, `null`, `undefined`) are immutable values that are copied on assignment and when passed to a function
+* Everything else (objects, arrays, functions, `Map`, `Set`, class instances) is accessed through a reference; assigning or passing it copies the reference, and both names point at the same object
+
+```ts
+let x = 10;
+let y = x;           // copies the value
+y = 20;              // x is still 10
+
+const a = { n: 1 };
+const b = a;         // copies the reference
+b.n = 2;             // a.n is 2 too
+
+function incr(n: number) { n++; }                 // changes a local copy
+function incrObj(o: { n: number }) { o.n++; }     // changes the caller's object
+
+let v = 1;
+incr(v);                                           // v === 1
+const box = { n: 1 };
+incrObj(box);                                      // box.n === 2
 ```
 
-* Large structs are cheaper to pass by pointer, and a function can only modify the caller's struct through a pointer
-* Slices, maps, and channels already contain internal pointers, so changes to their elements are visible to the caller even though the header itself was copied
-* A `nil` pointer is the zero value; check before dereferencing
+TypeScript always passes by value, where the value is either a primitive or a reference, which is the same "pass by object reference" rule as Python. To let a function change a primitive variable, return the new value (`v = incr(v)`) or wrap it in an object. `readonly` and `as const` stop accidental changes at compile time, and `Object.freeze` stops them at run time (one level deep).
+
+```ts
+interface Config { readonly host: string; port: number }
+const cfg: Config = { host: "localhost", port: 8080 };
+// cfg.host = "x";                 // compile error: Cannot assign to 'host' because it is a read-only property
+const frozen = Object.freeze({ a: 1 });
+// frozen.a = 2;                   // silently ignored (or a TypeError in strict mode); the compiler flags it too
+```
 
 ---
 
@@ -2013,41 +2454,53 @@ paired = list(zip(nums, doubled))
 print(doubled, evens, paired)
 ```
 
-## Built-in Functions in Go
+## Built-in Functions in TypeScript
 
-Go keeps its built-ins few; the rest lives in the standard library packages (`strings`, `slices`, `maps`, `sort`, `math`, `strconv`).
+TypeScript (JavaScript) has few free-standing built-in functions. Most of the work is done by methods on arrays, strings, and numbers, and by global objects such as `Math`, `JSON`, `Object`, and `Number`.
 
-```go
-len(x)                      // length of string, array, slice, map, channel
-cap(x)                      // capacity of slice, array, channel
-append(s, 1, 2)             // add to a slice (returns the new slice)
-copy(dst, src)              // copy slice elements, returns how many were copied
-delete(m, key)              // remove a map key
-make([]int, 0, 10)          // create slice, map, or channel
-make(map[string]int)
-make(chan int, 3)
-new(int)                    // pointer to a new zero value
-min(3, 1, 2)                // 1   (Go 1.21+)
-max(3, 1, 2)                // 3
-clear(m)                    // empties a map, zeroes slice elements (Go 1.21+)
-close(ch)                   // close a channel
-panic("boom")               // stop normal execution (see Exception Handling)
-recover()                   // regain control inside a deferred function
+```ts
+[1, 2, 3].length;                               // 3 (a property, not a function)
+Array.from({ length: 5 }, (_, i) => i);         // range(5)
+["a", "b"].entries();                           // enumerate: (0,'a'), (1,'b')
+typeof 5;                                       // "number"   (run-time type name)
+Array.isArray([]);                              // true
+(255).toString(16);                             // "ff"    hex(255)
+(5).toString(2);                                // "101"   bin(5)
+parseInt("ff", 16);                             // 255
+Number.isInteger(5);                            // true
+5 instanceof Number;                            // false (primitives are not instances); use typeof for primitives
+[] instanceof Array;                            // true     instanceof is for objects and classes
+
+// The Python built-ins, as array methods
+const nums = [1, 2, 3, 4, 5];
+const doubled = nums.map((x) => x * 2);                 // map
+const evens = nums.filter((x) => x % 2 === 0);          // filter
+const paired = nums.map((n, i) => [n, doubled[i]]);     // zip
+const total = nums.reduce((acc, x) => acc + x, 0);      // sum / functools.reduce
+nums.some((x) => x > 4);                                // any
+nums.every((x) => x > 0);                               // all
+[3, 1, 2].sort((a, b) => b - a);                        // sorted(..., key=lambda x: -x)  -> [3, 2, 1]
+nums.slice().reverse();                                 // reversed
+Math.max(...nums);                                      // max   (min, sum: Math.min / reduce)
+console.log(doubled, evens, paired);
+
+// Objects and JSON
+Object.keys({ a: 1 });                                  // ["a"]
+Object.entries({ a: 1 });                               // [["a", 1]]
+Object.fromEntries([["a", 1]]);                         // { a: 1 }
+JSON.stringify({ a: 1 });                               // '{"a":1}'
+structuredClone({ a: [1] });                            // deep copy
 ```
 
-```go
-// Python's sorted / enumerate / any / zip equivalents
-nums := []int{3, 1, 2}
-slices.Sort(nums)                        // sorts in place: [1 2 3]
-sort.Slice(people, func(i, j int) bool { // custom ordering
-    return people[i].Age < people[j].Age
-})
-slices.Contains(nums, 2)                 // true
-slices.Index(nums, 3)                    // 2
-slices.Max(nums)                         // 3
-slices.Reverse(nums)
-for i, v := range nums {}                // enumerate is built into range
-// map/filter: write a loop, or a small generic helper (see Generics)
+```ts
+// Other useful globals
+setTimeout(() => console.log("later"), 1000);           // run once after 1000 ms (returns a handle: clearTimeout)
+setInterval(() => console.log("tick"), 1000);           // run repeatedly (clearInterval)
+queueMicrotask(() => {});                               // run right after the current code, before timers
+console.log("a", { b: 1 });                             // print (also console.error, console.table, console.time)
+crypto.randomUUID();                                    // a random UUID
+typeof undefinedName;                                   // "undefined" without a ReferenceError (typeof is safe)
+void 0;                                                 // undefined
 ```
 
 ---
@@ -2153,41 +2606,87 @@ def add_item(item, items=None):        # fix: use None and create inside
     return items
 ```
 
-## Functions in Go
+## Functions in TypeScript
 
-```go
-func add(a, b int) int {                 // parameter types after names; result type after the parens
-    return a + b
+```ts
+function greet(name: string, greeting = "Hello"): string {      // parameter types after names; default values allowed
+  return `${greeting}, ${name}!`;
 }
 
-func divmod(a, b int) (int, int) {       // multiple return values are built in
-    return a / b, a % b
+function minMax(nums: number[]): [number, number] {             // return a tuple (one array) and destructure it
+  return [Math.min(...nums), Math.max(...nums)];
 }
-q, r := divmod(9, 2)                     // 4 1
+const [low, high] = minMax([3, 1, 2]);
 
-func split(sum int) (x, y int) {         // named results start as zero values
-    x = sum * 4 / 9
-    y = sum - x
-    return                               // "naked" return: use sparingly, only in short functions
+function total(...nums: number[]): number {                     // rest parameter: nums is a number[] (Python *args)
+  return nums.reduce((acc, n) => acc + n, 0);
+}
+total(1, 2, 3);
+total(...[1, 2, 3]);                                            // spread an array into the arguments
+
+// "keyword arguments": pass one object and destructure it, with defaults
+function connect({ host, port, timeout = 5 }: { host: string; port: number; timeout?: number }) {
+  return `${host}:${port} (${timeout}s)`;
+}
+connect({ host: "db", port: 5432, timeout: 10 });               // names make the call readable, order does not matter
+
+function log(message: string, level?: string) {                 // optional parameter: type is string | undefined
+  console.log(`[${level ?? "info"}] ${message}`);
 }
 
-func total(nums ...int) int {            // variadic: nums is a []int inside
-    sum := 0
-    for _, n := range nums {
-        sum += n
-    }
-    return sum
+// Function overloads: several call shapes, one implementation
+function parse(x: string): number;
+function parse(x: number): string;
+function parse(x: string | number): number | string {
+  return typeof x === "string" ? Number(x) : String(x);
 }
-total(1, 2, 3)
-total([]int{1, 2, 3}...)                 // spread a slice with ...
-
-double := func(x int) int { return x * 2 }   // function value / anonymous function
-func apply(f func(int) int, v int) int { return f(v) }   // functions are first-class
 ```
 
-* Go has no default arguments, no keyword arguments, and no function overloading. When a function needs many settings, pass an options struct or use the "functional options" pattern.
-* Return an `error` as the last result for anything that can fail (see Exception Handling).
-* Functions can be stored in variables, passed, returned, and used as closures (see Scope and Lifetime).
+```ts
+// Function expressions, arrow functions (the TypeScript version of lambda), and functions as values
+const add = (x: number, y: number): number => x + y;            // concise body: the value is returned
+const square = (x: number) => x * x;                            // return type inferred
+const makeObj = () => ({ ok: true });                           // wrap an object literal in () to return it
+add(3, 4);                                                      // 7
+
+function apply(f: (n: number) => number, v: number): number {   // a parameter whose type is a function
+  return f(v);
+}
+apply(square, 4);                                               // 16
+type Handler = (event: string) => void;                         // a named function type
+
+// Closures
+function outer(x: number) {
+  return (y: number) => x + y;
+}
+const add5 = outer(5);
+add5(10);                                                       // 15
+
+// Generators
+function* countdown(n: number): Generator<number> {
+  while (n > 0) {
+    yield n;
+    n--;
+  }
+}
+for (const num of countdown(3)) console.log(num);               // 3 2 1
+
+// A decorator in the Python sense: a function that wraps a function
+function logger<A extends unknown[], R>(fn: (...args: A) => R) {
+  return (...args: A): R => {
+    console.log(`Calling ${fn.name}`);
+    return fn(...args);
+  };
+}
+const sayHi = logger(function sayHi() { console.log("Hi!"); });
+sayHi();
+```
+
+* TypeScript has no keyword arguments, but a single options object with destructuring gives the same readability; positional default values work too
+* A function with no `return` statement returns `undefined` (Python: `None`); a return type of `void` documents that
+* Python's mutable-default trap does not exist: default expressions are evaluated on every call, so `function f(items: number[] = [])` gets a fresh array each time
+* `this` inside a regular `function` depends on how it is called, while an arrow function keeps the `this` of the place it was written (see Types, Interfaces and Classes)
+* Return an error as a value or throw an exception for anything that can fail (see Exception Handling)
 
 ---
 
@@ -2258,16 +2757,24 @@ squares = [n * n for n in range(3)]
 # print(n)                       # NameError: comprehension variables do not leak
 ```
 
-Go has block scope: every `{ }` creates a scope, and a variable declared inside it disappears at the closing brace. Names declared outside any function belong to the package, and imports are scoped to the file.
+TypeScript has block scope for `let` and `const`: every `{ }` creates a scope, and a variable declared inside it disappears at the closing brace. Lookup is lexical, as in Python: inner scopes can read outer names, and the search goes outward. The old `var` keyword ignores blocks and is scoped to the whole function (and is "hoisted", visible as `undefined` before its line), which is why modern code never uses it.
 
-```go
-func main() {
-    x := 1
-    if true {
-        y := 2                   // y exists only inside this block
-        fmt.Println(x, y)
-    }
-    // fmt.Println(y)            // compile error: undefined: y
+```ts
+function main() {
+  const x = 1;
+  if (true) {
+    const y = 2;                 // y exists only inside this block
+    console.log(x, y);
+  }
+  // console.log(y);             // compile error: Cannot find name 'y'
+
+  for (var i = 0; i < 3; i++) {} // var leaks out of the loop, like Python
+  console.log(i);                // 3
+  for (let j = 0; j < 3; j++) {} // let does not
+  // console.log(j);             // compile error: Cannot find name 'j'
+
+  // console.log(early);         // compile error: Block-scoped variable 'early' used before its declaration
+  const early = 5;               // the "temporal dead zone": let/const exist but cannot be used before this line
 }
 ```
 
@@ -2281,21 +2788,25 @@ len = 5                          # shadows the built-in len for the whole module
 list = [1, 2]                    # a very common beginner bug: now list(...) no longer works
 ```
 
-In Go the classic trap is `:=` inside a block, which creates a new variable instead of assigning to the outer one:
+In TypeScript an inner `let` or `const` with the same name creates a new variable that hides the outer one inside its block, and the outer one is left unchanged. A common trap is intending to assign but declaring a new variable instead (the ESLint rule `no-shadow` flags it):
 
-```go
-var err error
-if cond {
-    x, err := doWork()           // NEW x and NEW err: shadow the outer err
-    _ = x
+```ts
+let result = "outer";
+if (Math.random() > 0.5) {
+  const result = "inner";          // NEW variable: shadows the outer one inside this block
+  console.log(result);             // "inner"
 }
-fmt.Println(err)                 // still nil, the error was lost
+console.log(result);               // still "outer": the value computed inside was lost
 
-// Fix: declare the other variables first and use = instead of :=
-var x int
-if cond {
-    x, err = doWork()
+// Fix: assign to the outer variable instead of declaring a new one
+let data = "none";
+if (Math.random() > 0.5) {
+  data = "found";                  // no let/const: assigns the outer variable
 }
+
+// Shadowing built-ins is possible too
+const undefinedValue = undefined;
+function demo(Number: string) { /* Number is now a string here, the global Number is hidden */ }
 ```
 
 ## Closures and Late Binding
@@ -2310,24 +2821,28 @@ funcs = [lambda i=i: i for i in range(3)]   # bind the current value as a defaul
 [f() for f in funcs]             # [0, 1, 2]
 ```
 
-```go
-func counter() func() int {
-    count := 0                   // captured by the closure
-    return func() int {
-        count++
-        return count
-    }
+```ts
+function counter(): () => number {
+  let count = 0;                   // captured by the closure
+  return () => {
+    count++;
+    return count;
+  };
 }
 
-next := counter()
-next()                           // 1
-next()                           // 2
+const next = counter();
+next();                            // 1
+next();                            // 2
 
-// Since Go 1.22 each loop iteration has its own variable, so this prints 0 1 2 (in some order)
-for i := 0; i < 3; i++ {
-    go func() { fmt.Println(i) }()
+// Late binding with var: every callback shares ONE i, whose final value is 3
+for (var i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i), 0);        // 3 3 3
 }
-// Before Go 1.22 all goroutines shared one i and usually printed 3 3 3
+
+// let creates a fresh variable for each iteration, so each closure keeps its own value
+for (let j = 0; j < 3; j++) {
+  setTimeout(() => console.log(j), 0);        // 0 1 2
+}
 ```
 
 ## Module and Package Namespaces
@@ -2344,7 +2859,21 @@ dir(math)                        # names inside it
 globals()                        # this module's namespace as a dict
 ```
 
-`from module import name` makes a new name that points to the object at import time; if the module later rebinds its own variable, your name does not follow. In Go, each package is a namespace and you write `pkg.Name`; only names that begin with an uppercase letter are exported (visible to other packages), lowercase names are private to the package.
+`from module import name` makes a new name that points to the object at import time; if the module later rebinds its own variable, your name does not follow. In TypeScript each file that has an `import` or `export` is a module with its own scope, and nothing is visible to other files unless it is marked `export`. An imported name is a live, read-only view of the exporting module's variable, so if the exporter later changes it, importers see the new value (the opposite of Python's `from` behavior).
+
+```ts
+// file: counter.ts
+export let count = 0;
+export function increment() { count++; }
+
+// file: main.ts
+import { count, increment } from "./counter.js";   // named import (ESM paths in Node usually end in .js, even for .ts source)
+import * as counter from "./counter.js";            // namespace import: counter.count, counter.increment
+import math from "./math.js";                       // default import
+increment();
+console.log(count);                                 // 1   a live view
+// count = 5;                                       // compile error: Cannot assign to 'count' because it is an import
+```
 
 ## Scope vs Lifetime
 
@@ -2366,16 +2895,17 @@ c = make_counter()               # make_counter has returned, its scope is gone
 c(); c()                         # but the value behind count is still alive (2), because inc references it
 ```
 
-```go
-func newInt() *int {
-    v := 42                      // scope: this function only
-    return &v                    // lifetime: as long as anyone holds the pointer (moved to the heap)
+```ts
+function makeCounter() {
+  let count = 0;                 // scope: makeCounter's body and the inner function
+  return () => ++count;
 }
-p := newInt()
-fmt.Println(*p)                  // 42
+
+const c = makeCounter();         // makeCounter has returned, its scope is gone
+c(); c();                        // but the value behind count is still alive (2), because the arrow function references it
 ```
 
-The opposite also happens: a name can still be in scope while the thing it refers to is finished with, such as a closed file object or a closed network connection. Scope never tells you whether a resource is still usable; cleanup rules (`with`, `defer`) do.
+The opposite also happens: a name can still be in scope while the thing it refers to is finished with, such as a closed file object or a closed network connection. Scope never tells you whether a resource is still usable; cleanup rules (`with` in Python, `try`/`finally` or `using` in TypeScript) do.
 
 ---
 
@@ -2586,7 +3116,27 @@ Why it matters:
 * `multiprocessing` on Windows and macOS re-imports your main file in child processes, so work started at top level without this guard would run again and again
 * A package can have a `__main__.py`, which is what `python -m mypackage` runs
 
-Go has no such check. The entry point is explicit: the package named `main` containing `func main()` builds an executable, and every other package is a library. A package's `init()` function runs automatically when it is imported, so keep `init()` tiny.
+TypeScript has no `__name__`. A file runs from top to bottom when Node starts it, and also when another file imports it, so a file that must work as both a library and a program needs a check. In CommonJS the check is `require.main === module`; in ES modules, newer Node versions provide `import.meta.main`, and otherwise you compare the file's own URL with the script Node was started with:
+
+```ts
+// file: tools.ts (ES module)
+import { fileURLToPath } from "node:url";
+
+export function helper(): string {
+  return "helping";
+}
+
+function main(): void {
+  console.log("running tools directly");
+  console.log(helper());
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {   // true only when this file is the program, not when imported
+  main();
+}
+```
+
+As in Python, the top-level code of a module runs once, the first time it is imported, and later imports reuse the loaded module. Keep the top level to definitions and keep side effects inside functions.
 
 ## Circular Imports
 
@@ -2603,52 +3153,57 @@ def process():
     return helper()
 ```
 
-Go refuses circular package imports outright (`import cycle not allowed`), which forces layered design from the beginning.
+TypeScript accepts circular imports without complaint, which makes them easy to create by accident. ES modules handle a cycle with live bindings, but a value used before its module has finished evaluating is `undefined` or throws a `ReferenceError`, and the bug depends on which file is loaded first. The same fixes work: move shared code into a third file, import `type`-only names with `import type { Foo } from "./foo"` (erased at compile time, so no run-time cycle), or pass the dependency in as an argument. Tools such as the ESLint rule `import/no-cycle` and `madge` find cycles for you.
 
-## Packages and Modules in Go
+## Packages and Modules in TypeScript
 
-A package is a folder of `.go` files that all start with the same `package name` line. A module is a tree of packages with a `go.mod` file at its root. An import path is the module path plus the folder.
+A module is a single `.ts` file that contains `import` or `export`. A package is a folder with a `package.json` (a library you install from npm, or your own project). Imports are either relative paths (`./store`) or package names (`express`), and `export` marks what other files may use.
 
 ```text
 myapp/
-├── go.mod                      # module github.com/alice/myapp
-├── main.go                     # package main
-├── store/
-│   └── store.go                # package store   -> import "github.com/alice/myapp/store"
-└── internal/
-    └── auth/
-        └── auth.go             # package auth    -> only importable from inside myapp
+├── package.json                # "name": "myapp", "type": "module"
+├── tsconfig.json
+├── src/
+│   ├── main.ts                 # entry point
+│   ├── store/
+│   │   ├── index.ts            # re-exports the public parts of the folder (like __init__.py)
+│   │   └── store.ts
+│   └── internal/
+│       └── auth.ts
+└── dist/                       # compiled JavaScript
 ```
 
-```go
-// store/store.go
-package store
-
-type Store struct{ items map[string]string }   // uppercase = exported (visible to other packages)
-
-func New() *Store { return &Store{items: map[string]string{}} }
-func (s *Store) Put(k, v string) { s.items[k] = v }
-func helper() {}                                // lowercase = private to the package
-
-// main.go
-package main
-
-import (
-    "fmt"
-    "github.com/alice/myapp/store"      // module path + folder
-)
-
-func main() {
-    s := store.New()
-    s.Put("a", "1")
-    fmt.Println("ok")
+```ts
+// src/store/store.ts
+export class Store {
+  private items = new Map<string, string>();      // "private" is checked by the compiler only
+  put(k: string, v: string): void { this.items.set(k, v); }
+  get(k: string): string | undefined { return this.items.get(k); }
 }
+
+function helper() {}                               // not exported: private to this file
+export default function createStore() { return new Store(); }   // one default export per file (optional)
+
+// src/store/index.ts: the folder's public face
+export { Store } from "./store.js";
+export type { Config } from "./types.js";           // type-only export: erased at run time
+
+// src/main.ts
+import { Store } from "./store/index.js";           // relative path (with .js in Node's ESM mode)
+import createStore from "./store/store.js";         // default import: you pick the name
+import { readFile } from "node:fs/promises";        // built-in module (node: prefix)
+import express from "express";                      // package from node_modules
+
+const s = new Store();
+s.put("a", "1");
 ```
 
-* Exported means the identifier starts with a capital letter; there is no `public` or `private` keyword
-* The folder name is conventionally the package name; one folder holds exactly one package (plus its `_test` package)
-* A directory named `internal` can only be imported by code inside its parent module path
-* An import you do not use is a compile error; `import _ "pkg"` imports only for side effects (such as registering a database driver)
+* A file is private to itself until it uses `export`; there is no `__all__` and no underscore convention (use `export` selectively, and `private` or `#field` inside classes)
+* `package.json` has `"type": "module"` for ES modules (`import`/`export`) or leaves it out for CommonJS (`require`/`module.exports`); use ES modules in new projects, and with `"module": "NodeNext"` in `tsconfig.json` write the `.js` extension in relative imports
+* `import type { Foo }` imports only a type; it disappears from the compiled output
+* A folder with an `index.ts` can be imported by the folder's name (the bundler/`moduleResolution` setting decides whether this works), much like `__init__.py` re-exports
+* Path aliases (`"paths": { "@/*": ["src/*"] }` in `tsconfig.json`) shorten deep imports, but the runtime or bundler must also understand them
+* `import "./polyfill.js"` imports a file only for its side effects
 
 ---
 
@@ -2736,44 +3291,74 @@ A conflict happens when two requirements cannot both be satisfied. Python allows
 * Keep the dependency list small: every extra library is another source of conflicts and security problems
 * Inspect the tree when something fights: `python -m pip show pkg`, `pipdeptree`; scan for known vulnerabilities with `pip-audit`
 
-## Dependencies in Go (Go Modules)
+## Dependencies in TypeScript (npm)
 
-Every Go project is a module. The file `go.mod` records the module's name, the Go version, and the minimum version of each dependency. The file `go.sum` stores cryptographic hashes of the exact contents of each dependency, so a downloaded module that has been tampered with is rejected.
+Every TypeScript project is also an npm project. The file `package.json` lists the direct dependencies and the version range each may use. The file `package-lock.json` records the exact version of every package that was installed, including transitive ones, so everyone gets the same tree. The packages themselves are downloaded into a folder called `node_modules` inside the project, which is why there is no separate "virtual environment" step: the isolation is the folder.
+
+```json
+{
+  "name": "myapp",
+  "version": "1.0.0",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": { "build": "tsc", "test": "vitest run" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0",
+    "@types/express": "^4.17.21",
+    "vitest": "^2.0.0"
+  }
+}
+```
+
+* `dependencies` are needed when the program runs; `devDependencies` are only needed to build and test (the compiler, test runner, linters, and `@types/*` packages)
+* A library that is written in JavaScript needs type declarations before TypeScript can check your use of it: many ship their own, and for the rest install the community package `@types/<name>` (from DefinitelyTyped)
+* `node_modules/` is never committed (put it in `.gitignore`); commit `package.json` and `package-lock.json`
+
+### Version Ranges (semver)
 
 ```text
-module github.com/alice/myapp
-
-go 1.23
-
-require (
-    github.com/google/uuid v1.6.0
-    github.com/gorilla/mux v1.8.1
-    golang.org/x/text v0.14.0 // indirect
-)
+"express": "4.19.2"      exactly this version (a "pin")
+"express": "^4.19.2"     caret: >=4.19.2 and <5.0.0   (the default npm writes; new features and fixes, no major bumps)
+"express": "~4.19.2"     tilde: >=4.19.2 and <4.20.0  (patch updates only)
+"express": ">=4.19.2"    this or newer
+"express": "4.x"         any 4.something
+"express": "^0.2.3"      for 0.x versions the caret is stricter: >=0.2.3 and <0.3.0
+"express": "*"           anything (dangerous)
 ```
-
-How Go modules manage dependencies:
-
-* Each dependency is listed with an exact version; `// indirect` marks ones your code does not import directly but that are needed
-* Minimal version selection: if your project needs library C at v1.2 through one dependency and v1.4 through another, Go picks v1.4, the highest of the minimum versions requested, not the newest release. Builds do not change just because a new version was published; you upgrade on purpose
-* Downloads come through a module proxy (`proxy.golang.org`) and are checked against a public checksum database; they are cached in `$GOPATH/pkg/mod`
-* A module with major version 2 or higher uses `/v2` in its import path, so v1 and v2 can coexist in one build
-* The lock-file job is done by `go.mod` plus `go.sum`, so there is no separate lock step
 
 ```bash
-go mod init github.com/alice/myapp     # create go.mod
-go get github.com/google/uuid          # add a dependency (latest) and update go.mod/go.sum
-go get github.com/google/uuid@v1.6.0   # a specific version
-go get -u ./...                        # upgrade dependencies of the packages in this module
-go mod tidy                            # add missing, remove unused requirements (run before committing)
-go mod download                        # fetch everything into the module cache
-go mod verify                          # check cached modules against go.sum
-go mod why github.com/google/uuid      # why is this dependency here?
-go list -m all                         # the full list of modules and versions in the build
-go mod vendor                          # copy dependencies into ./vendor for offline builds
+npm install                          # install everything in package.json (honours package-lock.json)
+npm ci                               # clean, exact install from the lock file; fails if it disagrees with package.json (use in CI and Docker)
+npm install express                  # add a dependency (latest), updates package.json and the lock file
+npm install -D typescript            # add a dev dependency (--save-dev)
+npm install express@4.19.2           # a specific version
+npm uninstall express
+npm update                           # move packages up to the newest versions their ranges allow
+npm outdated                         # what has newer versions
+npm ls                               # the dependency tree (npm ls zod: who uses it?)
+npm explain zod                      # why is this package installed?
+npm audit                            # check for known vulnerabilities (npm audit fix tries to repair)
+npm dedupe                           # collapse duplicate copies of the same version
+npx tsc --noEmit                     # run a tool installed in this project
+npm run build                        # run a script from package.json
 ```
 
-For local development you can point a dependency at a folder with a `replace` directive in `go.mod`, or work on several modules together with a `go.work` file.
+### Conflicts, Duplicates and Lock Files
+
+Python allows one version of a package per environment, so two libraries that disagree cause `ResolutionImpossible`. npm can install more than one version of the same package side by side (each dependency gets its own copy in a nested `node_modules` when versions differ), so plain version conflicts are rare. The costs show up in other ways:
+
+* `peerDependencies`: a plugin says "I work with React 18", and if the project has another version npm stops with `ERESOLVE unable to resolve dependency tree`; fix by aligning versions rather than forcing with `--force` or `--legacy-peer-deps`
+* Duplicate copies make the install and the bundle bigger, and two copies of a library that must be a singleton (React, a state store) cause strange bugs; `npm ls pkg` and `npm dedupe` show and reduce them
+* Types can conflict even when the code runs: two versions of `@types/node` or `@types/react` produce confusing compile errors
+* Different lock files from different package managers (npm, Yarn, pnpm, Bun) fight each other; pick one per project
+* Transitive packages are a supply-chain risk: commit the lock file, install with `npm ci`, run `npm audit`, keep the list of dependencies small, and avoid upgrading to a version published only hours ago
+
+A project can pin its Node version with the `engines` field plus a `.nvmrc` file, and `pnpm`, `yarn`, and `bun` are alternative package managers that read the same `package.json`. For several packages in one repository use workspaces (`"workspaces": ["packages/*"]`), and for local development of a library use `npm link` or a `file:../mylib` dependency.
 
 ---
 
@@ -2893,77 +3478,131 @@ if __name__ == "__main__":
     app.run(debug=True)
 ```
 
-## API Calls in Go
+## API Calls in TypeScript
 
-The standard library has everything needed (`net/http` and `encoding/json`), with no third-party package.
+Modern JavaScript runtimes (Node.js 18+, Deno, Bun, and every browser) include `fetch`, so no third-party package is needed. Everything is asynchronous: `fetch` returns a promise, so you use `await`.
 
-```go
-package main
-
-import (
-    "bytes"
-    "encoding/json"
-    "fmt"
-    "net/http"
-    "time"
-)
-
-type User struct {
-    Login string `json:"login"`      // struct tags map JSON keys to fields
-    ID    int    `json:"id"`
+```ts
+interface User {
+  login: string;
+  id: number;
 }
 
-// A client with a timeout: the default http.Client has none, and a hung request would wait forever
-var client = &http.Client{Timeout: 5 * time.Second}
+async function getUser(name: string): Promise<User> {
+  const response = await fetch(`https://api.github.com/users/${name}`, {
+    signal: AbortSignal.timeout(5000),                 // fetch has NO default timeout: a hung request waits forever
+  });
 
-func getUser(name string) (*User, error) {
-    resp, err := client.Get("https://api.github.com/users/" + name)
-    if err != nil {
-        return nil, fmt.Errorf("request failed: %w", err)
-    }
-    defer resp.Body.Close()                       // always close the body
+  if (!response.ok) {                                  // fetch does NOT throw for 4xx/5xx: check it yourself
+    throw new Error(`unexpected status: ${response.status} ${response.statusText}`);
+  }
 
-    if resp.StatusCode != http.StatusOK {         // Go does not raise for 4xx/5xx: check it yourself
-        return nil, fmt.Errorf("unexpected status: %s", resp.Status)
-    }
-
-    var u User
-    if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
-        return nil, fmt.Errorf("decode: %w", err)
-    }
-    return &u, nil
+  return (await response.json()) as User;              // json() returns any: the cast is a promise, not a check
 }
 
-func createPost() error {
-    payload, _ := json.Marshal(map[string]any{"title": "Hello", "body": "World", "userId": 1})
-    resp, err := client.Post("https://jsonplaceholder.typicode.com/posts", "application/json", bytes.NewReader(payload))
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
-    fmt.Println(resp.StatusCode)                  // 201
-    return nil
-}
+console.log(await getUser("octocat"));                 // top-level await works in ES modules
 ```
 
-```go
-// A tiny server (the Go version of the Flask example)
-func main() {
-    mux := http.NewServeMux()
-    mux.HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "application/json")
-        json.NewEncoder(w).Encode(map[string]string{"message": "Hello, World!"})
-    })
-    mux.HandleFunc("POST /add", func(w http.ResponseWriter, r *http.Request) {
-        var in struct{ A, B int }
-        if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-            http.Error(w, "bad json", http.StatusBadRequest)
-            return
-        }
-        json.NewEncoder(w).Encode(map[string]int{"result": in.A + in.B})
-    })
-    http.ListenAndServe(":8080", mux)             // blocks; each request runs in its own goroutine
+```ts
+// Query parameters
+const params = new URLSearchParams({ q: "typescript", sort: "stars" });
+const res = await fetch(`https://api.github.com/search/repositories?${params}`);
+const data = await res.json();
+
+// POST with a JSON body
+const payload = { title: "Hello", body: "World", userId: 1 };
+const created = await fetch("https://jsonplaceholder.typicode.com/posts", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(payload),                       // you serialize the body yourself
+});
+console.log(created.status);                           // 201
+console.log(await created.json());
+
+// Headers and authentication
+await fetch("https://api.example.com/data", {
+  headers: {
+    Authorization: "Bearer YOUR_TOKEN",
+    "Content-Type": "application/json",
+  },
+});
+
+// PUT and DELETE
+await fetch("https://jsonplaceholder.typicode.com/posts/1", {
+  method: "PUT",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ title: "Updated" }),
+});
+await fetch("https://jsonplaceholder.typicode.com/posts/1", { method: "DELETE" });
+```
+
+```ts
+// Handling errors and timeouts
+async function load(url: string): Promise<unknown> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) {
+      throw new Error(`HTTP error: ${response.status}`);
+    }
+    return await response.json();
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "TimeoutError") {
+      console.error("Request timed out");
+    } else if (e instanceof TypeError) {
+      console.error("Network failure:", e.message);     // fetch rejects with TypeError when the network fails
+    } else {
+      console.error("Request failed:", e);
+    }
+    throw e;
+  }
 }
+
+// Several requests at the same time (Python: asyncio.gather)
+const logins = ["octocat", "torvalds", "gaearon"];
+const users = await Promise.all(logins.map((l) => getUser(l)));   // all start together; rejects if any one fails
+
+// Validate data from outside instead of casting it (Zod is a popular schema library)
+import { z } from "zod";
+const UserSchema = z.object({ login: z.string(), id: z.number() });
+const user = UserSchema.parse(await (await fetch("https://api.github.com/users/octocat")).json());
+// user is now checked at run time AND typed: it throws if the shape is wrong
+```
+
+```ts
+// A tiny server (the TypeScript version of the Flask example), using Express
+import express from "express";
+
+const app = express();
+app.use(express.json());                                // parse JSON request bodies
+
+app.get("/hello", (_req, res) => {
+  res.json({ message: "Hello, World!" });
+});
+
+app.post("/add", (req, res) => {
+  const { a, b } = req.body as { a: number; b: number };
+  if (typeof a !== "number" || typeof b !== "number") {
+    res.status(400).json({ error: "bad json" });
+    return;
+  }
+  res.json({ result: a + b });
+});
+
+app.listen(8080, () => console.log("listening on :8080"));   // one thread handles all requests, using the event loop
+```
+
+```ts
+// The same /hello with only Node's built-in http module (no packages)
+import { createServer } from "node:http";
+
+createServer((req, res) => {
+  if (req.method === "GET" && req.url === "/hello") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ message: "Hello, World!" }));
+    return;
+  }
+  res.writeHead(404).end();
+}).listen(8080);
 ```
 
 ---
@@ -3226,209 +3865,369 @@ if __name__ == "__main__":
         sys.exit(2)
 ```
 
-## Errors as Values in Go
+## Exceptions in TypeScript
 
-Go has no exceptions for ordinary failures. A function that can fail returns an `error` as its last result, and the caller checks it right away. `error` is just a built-in interface with one method, `Error() string`, and `nil` means success.
+TypeScript uses the same model as Python: `throw` an error, and it unwinds the call stack until a `try`/`catch` handles it. If none does, Node.js prints the error and exits with a non-zero status. The differences are that you can throw any value, there are no checked exceptions (a function's type says nothing about what it can throw), and one `catch` block catches everything, so you inspect the error yourself.
 
-```go
-func loadConfig(path string) (Config, error) {
-    data, err := os.ReadFile(path)
-    if err != nil {
-        return Config{}, fmt.Errorf("load config %q: %w", path, err)   // add context, keep the cause
-    }
-    var cfg Config
-    if err := json.Unmarshal(data, &cfg); err != nil {
-        return Config{}, fmt.Errorf("parse config %q: %w", path, err)
-    }
-    return cfg, nil
+```ts
+function parseAge(text: string): number {
+  const n = Number(text);
+  if (Number.isNaN(n)) {
+    throw new Error(`invalid age: ${text}`);       // Number("abc") gives NaN, not an exception: you check and throw
+  }
+  return n;
 }
 
-cfg, err := loadConfig("app.json")
-if err != nil {
-    log.Fatal(err)                  // or return err to the caller, or handle it
+function loadUser(text: string) {
+  return { age: parseAge(text) };                  // no try here: the error passes straight through
+}
+
+function main() {
+  try {
+    const user = loadUser("abc");
+    console.log(user);
+  } catch (e) {                                     // e is `unknown` in strict mode: anything can be thrown
+    if (e instanceof Error) {
+      console.log("Please enter a number:", e.message);
+    } else {
+      throw e;                                      // not an Error object: do not hide it
+    }
+  } finally {
+    console.log("done");                            // ALWAYS runs: success, handled error, return, or crash
+  }
 }
 ```
 
-Why Go code is full of `if err != nil`:
+Handle an error where you can do something meaningful about it (ask again, use a default, report to the user). In between, let it propagate.
 
-* Errors are ordinary return values, not hidden control flow: every place that can fail is visible in the code
-* The compiler pushes you to deal with the error right where it happens, with the context that makes the best decision possible
-* You can see the success path by reading straight down the left margin, and each failure path ends in an early `return`
-* The cost is repetition, which is the accepted trade-off; the benefit is that nothing jumps out of a function unexpectedly
+## try, catch, finally, throw
 
-## Creating, Wrapping and Inspecting Errors in Go
+```ts
+import { readFileSync } from "node:fs";
 
-```go
-import (
-    "errors"
-    "fmt"
-    "io/fs"
-    "os"
-)
-
-var ErrNotFound = errors.New("not found")          // sentinel error: compare with errors.Is
-
-type ValidationError struct {                      // custom error type: carries data
-    Field string
-    Msg   string
-}
-func (e *ValidationError) Error() string { return e.Field + ": " + e.Msg }
-
-func validate(age int) error {
-    if age < 0 {
-        return &ValidationError{Field: "age", Msg: "must be >= 0"}
+function readNumber(path: string): number | null {
+  try {                                             // code that may fail goes in try
+    const value = Number(readFileSync(path, "utf-8"));
+    if (Number.isNaN(value)) throw new RangeError("not a number");
+    return value;
+  } catch (e) {                                     // ONE catch for every kind of error
+    if (e instanceof Error && "code" in e && e.code === "ENOENT") {   // Node's file errors carry a code
+      console.log("file missing");
+      return null;
     }
-    return nil
-}
-
-func find(id int) error {
-    return fmt.Errorf("find user %d: %w", id, ErrNotFound)   // %w wraps, building a chain
-}
-
-err := find(7)
-fmt.Println(err)                                   // find user 7: not found
-errors.Is(err, ErrNotFound)                        // true: searches the whole chain
-errors.Unwrap(err)                                 // the wrapped error: ErrNotFound
-
-var ve *ValidationError
-if errors.As(validate(-1), &ve) {                  // finds an error of a given type in the chain
-    fmt.Println(ve.Field)                          // age
-}
-
-_, err = os.Open("missing.txt")
-errors.Is(err, fs.ErrNotExist)                     // true: works through the library's wrapping
-
-errors.Join(err1, err2)                            // combine several errors into one
-```
-
-Rules of thumb: wrap with `%w` when the caller may want to inspect the cause, add the operation name so the message reads like a trail (`load config: read file: permission denied`), and handle an error once, either return it or log it, not both.
-
-## panic and recover
-
-`panic` is for situations that should not happen: a programming bug or an impossible state. It stops the current function, runs its deferred calls, and unwinds up the goroutine's stack; if nothing recovers, the program crashes with a stack trace. Runtime errors (nil dereference, index out of range) are panics too.
-
-```go
-func mustPositive(n int) int {
-    if n <= 0 {
-        panic(fmt.Sprintf("n must be positive, got %d", n))
+    if (e instanceof RangeError) {                  // pick handlers with instanceof (Python: several except clauses)
+      console.log(`bad content: ${e.message}`);
     }
-    return n
-}
-
-func safe() (err error) {
-    defer func() {
-        if r := recover(); r != nil {            // recover only works inside a deferred function
-            err = fmt.Errorf("recovered: %v", r)
-        }
-    }()
-    mustPositive(-1)
-    return nil
+    throw e;                                        // re-throw (Python: bare raise)
+  } finally {
+    console.log("done");                            // ALWAYS runs: success, handled error, return, or crash
+  }
 }
 ```
 
-Do not use panic for ordinary errors such as bad input or a missing file. Use `recover` at boundaries (an HTTP server recovers per request so one bad request does not kill the process), and turn the panic into an error or a 500 response.
+* `try` — the code that might fail; keep it as short as possible
+* `catch (e)` — handles an error; in strict mode `e` is `unknown`, so narrow it with `instanceof Error` (or a check on `e.name`/`e.code`) before using `e.message`
+* No `else` block: put code that must run only on success after the risky statement inside `try`, or move the risky call into its own small function
+* `finally` — cleanup that must happen no matter what (closing, unlocking, rolling back)
+* `throw` — throw an error: `throw new TypeError("msg")`, or `throw e` inside `catch` to re-throw
+* `new Error("...", { cause: e })` — wrap a lower-level error while keeping the original as the cause (Python: `raise ... from e`)
 
-## try, except, raise, finally in Go Terms
+```ts
+// Error chaining: translate low-level errors into your application's language
+try {
+  config = JSON.parse(text);
+} catch (e) {
+  throw new Error("invalid config file", { cause: e });   // e is kept in error.cause
+}
+```
 
-| Python | Go |
+A `return` inside `finally` overrides any thrown error or return value from the `try`, which is almost never what you want, exactly as in Python. You can throw anything (`throw "oops"`), but always throw `Error` objects (or subclasses): only they carry a stack trace.
+
+## The Error Hierarchy
+
+```text
+Error                                    # base for normal errors; has message, name, stack, cause
+├── TypeError                            # wrong type of value:  undefined.x, calling a non-function
+├── RangeError                           # value out of range:   new Array(-1), "Maximum call stack size exceeded"
+├── SyntaxError                          # bad syntax:           JSON.parse("abc")
+├── ReferenceError                       # name does not exist:  using an undeclared variable
+├── EvalError, URIError                  # rare
+└── AggregateError                       # several errors in one (Promise.any, Promise.allSettled use)
+Node adds: system errors with a `code` such as ENOENT (missing file), EACCES, ECONNREFUSED
+Browsers add: DOMException (for example AbortError, TimeoutError)
+```
+
+There is no `KeyboardInterrupt` object: Ctrl+C is a signal you can listen for (`process.on("SIGINT", ...)`). Catch the narrowest case you can, and keep a catch-everything handler only at the outermost layer of the program.
+
+## Validation
+
+Validate data where it enters your program (user input, files, network, environment variables) and fail early with a clear message. Inside, trust the data you already checked. TypeScript's types vanish at run time, so the data from outside needs a real run-time check.
+
+```ts
+function setAge(age: unknown): number {
+  if (typeof age !== "number" || Number.isNaN(age)) {
+    throw new TypeError("age must be a number");
+  }
+  if (age < 0 || age > 150) {
+    throw new RangeError(`age out of range: ${age}`);
+  }
+  return age;
+}
+
+// Two styles for handling possible failure
+// LBYL: look before you leap
+if ("key" in data) {
+  value = data["key"];
+}
+// EAFP: try and handle the failure (less common in TypeScript, because a missing key does not throw)
+value = data["key"] ?? null;                         // usually the natural form
+
+// A schema library validates and types in one step
+import { z } from "zod";
+const Age = z.number().int().min(0).max(150);
+Age.parse(30);                                       // 30; throws a ZodError for anything else
+const result = Age.safeParse("x");                   // { success: false, error } instead of throwing
+```
+
+`assert` from `node:assert` is for internal assumptions that must always be true (`assert(items.length > 0)`); it is a real check (not removed in production), but it is still meant for bugs, not for validating user input. A type guard (`function isUser(x: unknown): x is User`) lets you check unknown data once and have the compiler treat it as the narrower type afterwards.
+
+## Cleanup After Failure
+
+Resources (files, locks, sockets, database connections, temporary files) must be released even when something fails halfway. In TypeScript use `try`/`finally`, or the newer `using` declaration (TypeScript 5.2+, for objects that implement `Symbol.dispose` or `Symbol.asyncDispose`; it needs a runtime or library that supports them), which calls the cleanup on the way out like Python's `with`.
+
+```ts
+import { open } from "node:fs/promises";
+
+const file = await open("data.txt");
+try {
+  await process(file);
+} finally {
+  await file.close();                  // closed even if process() throws
+}
+
+// `await using` (async cleanup): the file is closed when the block ends, however it ends
+{
+  await using f = await open("data.txt");   // FileHandle implements Symbol.asyncDispose in recent Node versions
+  await process(f);
+}
+
+// Write your own disposable resource
+class Transaction implements AsyncDisposable {
+  constructor(private conn: Connection) {}
+  async commit() { await this.conn.exec("COMMIT"); }
+  async [Symbol.asyncDispose]() { await this.conn.close(); }
+}
+
+// Without `using`, the transaction pattern is try / catch / finally
+async function transaction(conn: Connection, work: () => Promise<void>) {
+  try {
+    await work();
+    await conn.exec("COMMIT");          // success path
+  } catch (e) {
+    await conn.exec("ROLLBACK");        // failure path: undo the partial work
+    throw e;                            // and still report the error
+  } finally {
+    await conn.close();
+  }
+}
+```
+
+## Never Silently Swallow Errors
+
+An error that is caught and thrown away turns into a mystery later: wrong data, missing records, a program that "works" but is wrong.
+
+```ts
+// Bad: hides every problem
+try {
+  await save(order);
+} catch {}
+
+// Bad: catches too much and returns a value that looks like success
+function getPrice(item: string): number {
+  try {
+    return prices[item];
+  } catch {
+    return 0;
+  }
+}
+
+// Good: specific, logged with the stack, and the caller still learns about the failure
+try {
+  await save(order);
+} catch (e) {
+  console.error(`could not save order ${order.id}`, e);   // logs the message and the stack
+  throw e;
+}
+```
+
+* Catch specific errors (`instanceof`, `e.name`, `e.code`)
+* Either handle an error or let it propagate; do not log it and also pretend it did not happen
+* Add context when re-throwing (`{ cause: e }`), never delete it
+* Log once, at the layer that finally handles the error, to avoid duplicate noise
+* A promise that rejects and is never awaited or caught becomes an "unhandled rejection", which crashes recent Node versions by default; always `await` your promises or attach `.catch`
+
+## Custom Errors
+
+```ts
+class AppError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = new.target.name;          // so logs show "NotFoundError" instead of "Error"
+  }
+}
+
+class NotFoundError extends AppError {
+  constructor(public resource: string, public resourceId: number) {
+    super(`${resource} ${resourceId} not found`);
+  }
+}
+
+class ValidationError extends AppError {}
+
+try {
+  throw new NotFoundError("user", 42);
+} catch (e) {
+  if (e instanceof AppError) {            // one check for everything the app throws deliberately
+    console.log(e.message);
+  } else {
+    throw e;
+  }
+}
+```
+
+## Errors in Promises and async/await
+
+Inside an `async` function, `throw` rejects the returned promise, and `await` turns a rejection back into a throw, so ordinary `try`/`catch` works across `await`.
+
+```ts
+async function fetchJson(url: string): Promise<unknown> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+try {
+  const data = await fetchJson("https://example.com/data");
+} catch (e) {
+  console.error("failed:", e);            // catches both the network error and our own throw
+}
+
+fetchJson("https://example.com/data").catch((e) => console.error(e));   // the promise style
+
+// Several promises: choose how failures are handled
+await Promise.all([fetchJson("a"), fetchJson("b")]);           // rejects at the first failure
+const results = await Promise.allSettled([fetchJson("a"), fetchJson("b")]);
+// [{ status: "fulfilled", value }, { status: "rejected", reason }]: nothing is thrown, you inspect each one
+await Promise.any([fetchJson("a"), fetchJson("b")]);           // first success wins; AggregateError if all fail
+
+// Forgetting await: the error escapes the try block
+try {
+  fetchJson("bad");                        // no await: a rejection here is NOT caught by this catch
+} catch {}
+```
+
+## Expected Failures as Values
+
+Throwing is for the unexpected. For failures that are an ordinary part of the logic (a lookup that finds nothing, a validation that fails), many TypeScript programs return the failure as a value, so the compiler forces the caller to deal with it. A discriminated union makes this safe:
+
+```ts
+type Result<T, E = Error> =
+  | { ok: true; value: T }
+  | { ok: false; error: E };
+
+function parsePort(text: string): Result<number, string> {
+  const n = Number(text);
+  if (!Number.isInteger(n) || n < 1 || n > 65535) {
+    return { ok: false, error: `bad port: ${text}` };
+  }
+  return { ok: true, value: n };
+}
+
+const r = parsePort("8080");
+if (r.ok) {
+  console.log(r.value);        // narrowed: value exists here
+} else {
+  console.log(r.error);        // narrowed: error exists here
+}
+
+const found = items.find((i) => i.id === 7);   // T | undefined is the simplest "maybe"
+if (!found) { /* handle missing */ }
+```
+
+## try, except, raise, finally in TypeScript Terms
+
+| Python | TypeScript |
 | :--- | :--- |
-| `try` / `except` | call the function, then `if err != nil { ... }` right after |
-| `else` (success path) | the code after the `if err != nil` block, not indented |
-| `raise Error(...)` | `return fmt.Errorf(...)` or `return &MyError{...}` |
-| `raise ... from e` | `fmt.Errorf("...: %w", e)` |
-| `except SomeError` | `errors.Is(err, X)` or `errors.As(err, &target)` |
-| `finally` / `with` | `defer` |
-| bug that should crash | `panic(...)`, optionally `recover()` at a boundary |
-| custom exception class | any type with an `Error() string` method |
+| `try` / `except` | `try` / `catch (e)`, then `instanceof` or other checks to choose |
+| `else` (success path) | the rest of the `try` block, or a separate small function |
+| `raise Error(...)` | `throw new Error(...)` |
+| `raise ... from e` | `new Error("...", { cause: e })` |
+| `except SomeError` | `if (e instanceof SomeError)` |
+| `finally` / `with` | `finally` or `using` / `await using` |
+| bug that should crash | `throw`, or `assert(...)` from `node:assert` |
+| custom exception class | `class MyError extends Error` |
+| `KeyError` for a missing key | no error: a missing key reads as `undefined` |
+| expected failure | return `T \| undefined`, or a `Result` union |
 
-## Resource Cleanup with defer
-
-`defer` schedules a function call to run when the surrounding function returns, whether it returns normally, through an early `return`, or because of a panic. It keeps the cleanup right next to the code that acquired the resource.
-
-```go
-func process(path string) error {
-    f, err := os.Open(path)
-    if err != nil {
-        return err
-    }
-    defer f.Close()                  // runs when process returns, on every path
-
-    // ... many lines, many possible early returns ...
-    return nil
-}
-
-mu.Lock()
-defer mu.Unlock()                    // the standard lock/unlock pairing
-```
-
-When does a deferred function run? At the moment the function that contains the `defer` returns (not at the end of the block, unlike Python's `with`). Details that matter:
-
-```go
-// Several defers run in last-in, first-out order
-func demo() {
-    defer fmt.Println("first deferred")     // runs last
-    defer fmt.Println("second deferred")    // runs first
-    fmt.Println("body")
-}
-// output: body / second deferred / first deferred
-
-// Arguments are evaluated when the defer statement executes, not when it runs
-x := 1
-defer fmt.Println("x was", x)               // prints "x was 1"
-x = 2
-
-// A deferred closure sees later changes and can set named results
-func readAll(path string) (err error) {
-    f, err := os.Open(path)
-    if err != nil {
-        return err
-    }
-    defer func() {
-        if cerr := f.Close(); err == nil {  // do not lose a Close error on a successful write
-            err = cerr
-        }
-    }()
-    return nil
-}
-```
-
-Defer inside a loop is a trap: every deferred call waits until the whole function returns, so thousands of files would stay open.
-
-```go
-for _, name := range files {
-    f, _ := os.Open(name)
-    defer f.Close()                         // BAD: nothing closes until the function ends
-}
-
-for _, name := range files {
-    if err := processFile(name); err != nil {   // GOOD: processFile has its own defer
-        return err
-    }
-}
-```
-
-## Recovering from Failed Operations in Go
+## Recovering from Failed Operations in TypeScript
 
 The same ideas apply: retry only transient errors, limit attempts, back off, respect cancellation, and wrap the final error.
 
-```go
-func retry(ctx context.Context, attempts int, delay time.Duration, fn func() error) error {
-    var err error
-    for i := 0; i < attempts; i++ {
-        if err = fn(); err == nil {
-            return nil
-        }
-        select {
-        case <-time.After(delay << i):          // 1x, 2x, 4x ... exponential backoff
-        case <-ctx.Done():                       // stop waiting if the caller gave up
-            return ctx.Err()
-        }
+```ts
+async function retry<T>(
+  fn: () => Promise<T>,
+  attempts = 3,
+  baseDelayMs = 500,
+  signal?: AbortSignal,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt === attempts) break;                          // out of attempts
+      const delay = baseDelayMs * 2 ** (attempt - 1) + Math.random() * 100;   // 0.5s, 1s, 2s ... plus jitter
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, delay);
+        signal?.addEventListener("abort", () => {               // stop waiting if the caller gave up
+          clearTimeout(timer);
+          reject(signal.reason);
+        }, { once: true });
+      });
     }
-    return fmt.Errorf("after %d attempts: %w", attempts, err)
+  }
+  throw new Error(`failed after ${attempts} attempts`, { cause: lastError });
 }
+
+const data = await retry(() => fetchJson("https://example.com/data"));
 ```
 
-At the top of the program, `main` decides the exit code: print the error and call `os.Exit(1)` there, and nowhere deeper (deferred calls do not run after `os.Exit`).
+The outermost layer of an application is where unexpected errors end up: log them, show a clean message, and exit with a non-zero code so schedulers and CI know it failed.
+
+```ts
+async function main(): Promise<void> {
+  // ...
+}
+
+main().catch((e) => {
+  if (e instanceof AppError) {
+    console.error(e.message);                   // expected failure: short message, no stack
+    process.exitCode = 1;
+  } else {
+    console.error("unexpected failure", e);     // unexpected: full stack in the log
+    process.exitCode = 2;
+  }
+});
+
+process.on("unhandledRejection", (reason) => {   // last line of defence for forgotten promises
+  console.error("unhandled rejection", reason);
+  process.exit(1);
+});
+process.on("SIGINT", () => process.exit(130));   // conventional exit code for Ctrl+C
+```
+
+Set `process.exitCode` (and let the program finish) rather than calling `process.exit()` in the middle of the work, which can cut off pending output and cleanup.
 
 ---
 
@@ -3480,54 +4279,58 @@ with open(tmp, "w", encoding="utf-8") as f:
 os.replace(tmp, "data.txt")
 ```
 
-## File Handling in Go
+## File Handling in TypeScript
 
-```go
+Files are handled by Node.js's `node:fs` module (the same code does not work in a browser). Prefer the promise-based `node:fs/promises`, which fits `async`/`await`; the older callback API and the blocking `*Sync` versions (`readFileSync`) also exist, and the synchronous ones are fine in small scripts but block the event loop in a server.
+
+```ts
+import { readFile, writeFile, appendFile, mkdir, stat, rename } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
+import path from "node:path";
+
 // Small files: one call each
-data, err := os.ReadFile("data.txt")                        // []byte
-if err != nil {
-    return err
-}
-text := string(data)
+const text = await readFile("data.txt", "utf-8");            // string (without "utf-8" you get a Buffer of bytes)
+await writeFile("out.txt", "hello", "utf-8");                // creates or truncates (like mode "w")
+await appendFile("app.log", "one more line\n", "utf-8");     // like mode "a"
+await writeFile("new.txt", "x", { flag: "wx" });             // like mode "x": fails if the file exists
 
-err = os.WriteFile("out.txt", []byte("hello"), 0o644)       // creates or truncates; 0o644 = permissions
-
-// Larger files: open, defer Close, read line by line
-f, err := os.Open("data.txt")                               // read-only
-if err != nil {
-    return err
+// Larger files: stream line by line (like `for line in f`)
+const rl = createInterface({ input: createReadStream("data.txt", "utf-8"), crlfDelay: Infinity });
+for await (const line of rl) {
+  console.log(line);
 }
-defer f.Close()
-
-scanner := bufio.NewScanner(f)
-for scanner.Scan() {
-    fmt.Println(scanner.Text())
-}
-if err := scanner.Err(); err != nil {                        // a scanner stops silently: always check Err
-    return err
-}
-
-// Append / create with flags
-out, err := os.OpenFile("app.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-if err != nil {
-    return err
-}
-defer out.Close()
-fmt.Fprintln(out, "one more line")
 
 // Paths and checks
-p := filepath.Join("logs", "app.log")                       // portable path building
-_, err = os.Stat(p)
-if errors.Is(err, fs.ErrNotExist) {
-    os.MkdirAll(filepath.Dir(p), 0o755)
+const p = path.join("logs", "app.log");                      // portable path building (Python: Path / ...)
+await mkdir(path.dirname(p), { recursive: true });           // mkdir(parents=True, exist_ok=True)
+path.extname(p);                                             // ".log"
+path.basename(p);                                            // "app.log"
+
+try {
+  await stat(p);                                             // throws ENOENT when missing
+} catch (e) {
+  if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+    console.log("does not exist");
+  } else {
+    throw e;
+  }
 }
 
-// JSON file <-> struct
-var cfg Config
-if err := json.Unmarshal(data, &cfg); err != nil {
-    return err
-}
+// JSON file <-> object
+const config = JSON.parse(await readFile("config.json", "utf-8"));      // validate it before trusting it
+await writeFile("out.json", JSON.stringify(config, null, 2), "utf-8");  // indent 2, like json.dump(indent=2)
+
+// Safe replacement of a file: write a temp file, then swap it in, so a crash never leaves half a file
+const tmp = "data.txt.tmp";
+await writeFile(tmp, "new content", "utf-8");
+await rename(tmp, "data.txt");                               // atomic on the same filesystem
 ```
+
+* Always pass the encoding for text (`"utf-8"`), or you receive raw bytes
+* `readFile` loads the whole file into memory; use streams or `readline` for big files
+* There is no `with`: the promise helpers (`readFile`, `writeFile`) open and close for you; for a manual `FileHandle` use `try`/`finally` or `await using` (see Cleanup After Failure)
+* Relative paths are resolved against the folder you started Node in (`process.cwd()`), not against the source file; in ES modules build a file-relative path with `new URL("./data.txt", import.meta.url)`
 
 ---
 
@@ -3676,7 +4479,7 @@ The kind of work decides what helps:
 | Thread | Shared with the other threads of the process | Operating system | I/O-bound work with blocking libraries |
 | Process | Separate memory for each process | Operating system | CPU-bound work, isolation |
 | Async I/O (event loop) | One thread, shared memory | Your code, at each `await` | Very many simultaneous I/O waits |
-| Goroutine (Go) | Shared | Go runtime, over a few OS threads | Almost everything, I/O and CPU |
+| Worker thread (TypeScript / Node.js) | Separate heap per worker; messages are copied (or memory is shared explicitly with `SharedArrayBuffer`) | Operating system | CPU-bound work without leaving the process |
 
 Shared memory is fast and convenient but dangerous: two threads changing the same data need synchronization. Separate processes cannot damage each other's memory, but sharing data between them costs serialization and copying.
 
@@ -3688,7 +4491,7 @@ CPython has a lock that lets only one thread execute Python bytecode at a time. 
 * Threads do not speed up CPU-bound pure Python code: four threads share one core's worth of Python execution
 * C extensions such as NumPy release the GIL during heavy computation, so they can use several cores from threads
 * Python 3.13 added an optional "free-threaded" build without the GIL (experimental there, officially supported from 3.14, and not the default build), but libraries need to support it
-* Go has nothing like it: goroutines run in parallel on all available cores (`GOMAXPROCS` defaults to the core count)
+* JavaScript has no GIL, but a stricter rule: each JavaScript environment (the main thread, or one worker) runs your code on exactly one thread, so there are no data races on ordinary variables; parallelism comes from separate worker threads (each with its own heap) or separate processes
 
 ## Threads in Python
 
@@ -3901,237 +4704,283 @@ asyncio.run(main())
 
 ---
 
-# Concurrency in Go
+# Concurrency in TypeScript
 
-## Goroutines
+TypeScript runs as JavaScript, which has a different concurrency model from Python threads: one thread runs your code, and an event loop switches between tasks whenever one of them waits (`await`). This is the same idea as Python's `asyncio`, built into the language and used by every library. Real parallelism is available through worker threads.
 
-A goroutine is a function running concurrently with other code, started with `go`. It is far cheaper than an OS thread (it starts with a few kilobytes of stack that grows as needed), and the Go runtime schedules thousands of them over a handful of OS threads, using all cores. When `main` returns, the program exits and every goroutine is killed, so you must wait for them.
+## The Event Loop
 
-```go
-func main() {
-    var wg sync.WaitGroup
-    for i := range 3 {
-        wg.Add(1)                    // count one more goroutine to wait for (before starting it)
-        go func() {
-            defer wg.Done()          // signal completion
-            fmt.Println("worker", i)
-        }()
+Your JavaScript runs on a single thread. When you start something slow (a network call, a file read, a timer), the runtime does the waiting in the background and queues a callback for when it finishes. The loop runs queued callbacks one at a time, each to completion. Promise callbacks (microtasks) run before timers and I/O callbacks (macrotasks).
+
+```ts
+console.log("1 start");
+setTimeout(() => console.log("4 timeout"), 0);          // macrotask: runs after the current code and all microtasks
+Promise.resolve().then(() => console.log("3 microtask"));   // microtask: runs right after the current code
+console.log("2 end");
+// 1 start
+// 2 end
+// 3 microtask
+// 4 timeout
+```
+
+Because only one callback runs at a time, a long synchronous computation blocks everything: timers, incoming requests, and other promises all wait.
+
+```ts
+function blockFor(ms: number) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {}                           // nothing else can run during this loop
+}
+setTimeout(() => console.log("timer"), 10);
+blockFor(1000);                                         // the timer fires only after about 1000 ms
+```
+
+The rule is the same as Python's asyncio: never block the loop with heavy computation or blocking calls (`readFileSync` in a server, `crypto.pbkdf2Sync`); use async APIs, or move CPU work to a worker thread.
+
+## Promises and async/await
+
+A `Promise<T>` is a value that will arrive later. An `async` function always returns a promise; `await` pauses that function (not the thread) until the promise settles, and other code runs meanwhile. Calling an async function starts it immediately, running until its first `await`.
+
+```ts
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function sayHello(): Promise<void> {
+  console.log("Start");
+  await sleep(1000);                // non-blocking wait
+  console.log("End");
+}
+
+await sayHello();                   // top-level await works in ES modules
+```
+
+```ts
+// Running tasks concurrently
+async function fetchData(name: string, delayMs: number): Promise<string> {
+  await sleep(delayMs);
+  console.log(`${name} done`);
+  return name;
+}
+
+const results = await Promise.all([
+  fetchData("Task1", 2000),
+  fetchData("Task2", 1000),
+  fetchData("Task3", 3000),
+]);
+console.log(results);               // finishes in about 3 s, not 6 s
+
+// Awaiting one after another is sequential: 6 s
+await fetchData("A", 2000);
+await fetchData("B", 1000);
+await fetchData("C", 3000);
+
+// Start now, await later (Python: create_task)
+const task1 = fetchData("X", 1000);   // already running
+const task2 = fetchData("Y", 1000);
+console.log(await task1, await task2);
+```
+
+A promise that is created but never awaited ("floating") is a common bug: its errors become unhandled rejections and the work can outlive the code that started it. Enable the ESLint rule `@typescript-eslint/no-floating-promises` to catch it.
+
+```ts
+// async iteration (Python: async for)
+async function* ticker(): AsyncGenerator<number> {
+  for (let i = 0; i < 3; i++) {
+    await sleep(500);
+    yield i;
+  }
+}
+for await (const value of ticker()) {
+  console.log(value);               // 0 1 2
+}
+```
+
+The program does not end when the function that started the work returns: Node.js keeps running while there is pending work (timers, sockets, unresolved I/O), and exits when the event loop is empty. `process.exit()` stops it immediately, abandoning anything in flight.
+
+## Combining Promises
+
+| Combinator | Result | Use it when |
+| :--- | :--- | :--- |
+| `Promise.all([...])` | array of all values; rejects at the first failure | all of them must succeed (Python `gather`) |
+| `Promise.allSettled([...])` | array of `{ status, value / reason }`; never rejects | you want every outcome, good or bad (`gather(return_exceptions=True)`) |
+| `Promise.race([...])` | the first one to settle, success or failure | timeouts and "whichever answers first" |
+| `Promise.any([...])` | the first success; `AggregateError` if all fail | redundant sources |
+
+```ts
+const settled = await Promise.allSettled([fetchData("a", 100), Promise.reject(new Error("boom"))]);
+for (const r of settled) {
+  if (r.status === "fulfilled") console.log("ok", r.value);
+  else console.log("failed", r.reason.message);
+}
+
+// A timeout by racing (note: the loser keeps running; use AbortSignal to really cancel it)
+const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+  Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))]);
+await withTimeout(fetchData("slow", 5000), 2000);   // rejects after 2 s
+```
+
+## Limiting Concurrency (Semaphore, Worker Pool)
+
+`Promise.all(items.map(...))` starts everything at once, which is a problem for 10 000 URLs or a database with a connection limit. JavaScript has no built-in semaphore, but a small pool of workers that pull from a shared index does the same job (the `p-limit` and `p-queue` libraries package this).
+
+```ts
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const i = next++;                       // safe: only one thread, and no await between the read and the increment
+      results[i] = await fn(items[i], i);
     }
-    wg.Wait()                        // block until the counter returns to zero
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
+
+const squares = await mapLimit([1, 2, 3, 4, 5, 6, 7, 8], 3, async (n) => {
+  await sleep(100);
+  return n * n;                               // at most 3 run at a time; results keep the input order
+});
 ```
 
-Newer Go versions (1.25+) also provide `wg.Go(func() { ... })`, which does the Add and Done for you.
+## Worker Threads: Real Parallelism
 
-## Channels
+A worker thread (`node:worker_threads`) is a separate JavaScript environment with its own event loop and heap, running on its own core. Workers do not share ordinary variables: they talk by messages, which are copied (structured clone). This is the CPU-bound answer in TypeScript, like Python's `ProcessPoolExecutor`.
 
-A channel is a typed pipe between goroutines. Sending and receiving are synchronization points.
+```ts
+// main.ts
+import { Worker } from "node:worker_threads";
 
-```go
-ch := make(chan int)                 // unbuffered: a send waits until another goroutine receives
-go func() { ch <- 42 }()             // send
-v := <-ch                            // receive (blocks until a value arrives)
-
-buf := make(chan string, 3)          // buffered: sends only block when the buffer is full
-buf <- "a"
-buf <- "b"
-fmt.Println(len(buf), cap(buf))      // 2 3
-
-// Producer / consumer
-func produce(n int) <-chan int {     // <-chan int: receive-only in the caller's view
-    out := make(chan int)
-    go func() {
-        defer close(out)             // the SENDER closes the channel when it is done
-        for i := 0; i < n; i++ {
-            out <- i
-        }
-    }()
-    return out
+function runWorker(n: number): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL("./worker.js", import.meta.url), { workerData: n });   // the compiled file
+    worker.once("message", resolve);                    // the result arrives as a message
+    worker.once("error", reject);                       // an exception inside the worker
+    worker.once("exit", (code) => {
+      if (code !== 0) reject(new Error(`worker stopped with code ${code}`));
+    });
+  });
 }
 
-for v := range produce(3) {          // range stops when the channel is closed and drained
-    fmt.Println(v)
-}
-
-v, ok := <-ch                        // ok is false when the channel is closed and empty
+const results = await Promise.all([10_000_000, 10_000_000, 10_000_000, 10_000_000].map(runWorker));
+console.log(results);                                    // four jobs on four cores, in parallel
 ```
 
-* Only the sender should close a channel; sending on a closed channel panics
-* Receiving from a closed channel returns the zero value immediately (check `ok`)
-* Sending to or receiving from a nil channel blocks forever
-* `chan<- T` is send-only and `<-chan T` is receive-only; use them in function signatures to state intent
+```ts
+// worker.ts
+import { parentPort, workerData } from "node:worker_threads";
 
-## select
-
-`select` waits on several channel operations and runs the first one that is ready. It is how you add timeouts, cancellation, and multiplexing.
-
-```go
-select {
-case msg := <-messages:
-    fmt.Println("got", msg)
-case <-time.After(2 * time.Second):
-    fmt.Println("timed out")
-case <-ctx.Done():
-    fmt.Println("cancelled")
-default:                             // optional: run this if nothing is ready right now (non-blocking)
+let sum = 0;
+for (let i = 0; i < (workerData as number); i++) {
+  sum += Math.sqrt(i);                                   // CPU-bound work: it does not block the main thread
 }
+parentPort!.postMessage(sum);
 ```
 
-## Mutexes and Atomics
+* Starting a worker is slower than starting a promise; for many jobs keep a pool of workers alive (the `piscina` library)
+* Messages are copied; to hand over a big buffer without copying, transfer it (`postMessage(buf, [buf.buffer])`) or share memory with a `SharedArrayBuffer`
+* For separate processes (isolation, crash safety, other programs) use `child_process.fork` or the `cluster` module, the same idea as Python's `multiprocessing`
+* In Python the matching trick is `asyncio.to_thread`; in Node.js the matching trick is a worker, because the main thread must stay free
 
-A mutex lets only one goroutine at a time into a critical section.
+## Message Passing vs Shared Memory
 
-```go
-type SafeCounter struct {
-    mu sync.Mutex                    // put the mutex next to the data it guards
-    n  map[string]int
+Worker threads can communicate by messages (the default) or by sharing memory.
+
+* Message passing: each side owns its data and sends copies; there are no races, and it is the simplest model. A `MessagePort`/`postMessage` pair, an `EventEmitter`, or an async iterator (`for await`) are the usual tools.
+* Shared memory: `SharedArrayBuffer` plus typed arrays lets several workers see the same bytes. Plain reads and writes are then unsafe, so use `Atomics` for counters and flags, and `Atomics.wait`/`notify` for waiting (only inside workers).
+
+```ts
+// producer / consumer with an async iterator: one side yields, the other awaits
+async function* produce(n: number): AsyncGenerator<number> {
+  for (let i = 0; i < n; i++) yield i;
+}
+for await (const v of produce(3)) {
+  console.log(v);                                        // 0 1 2
 }
 
-func (c *SafeCounter) Inc(key string) {
-    c.mu.Lock()
-    defer c.mu.Unlock()              // unlock on every path, even a panic
-    c.n[key]++
-}
-
-var rw sync.RWMutex                  // many readers OR one writer: RLock/RUnlock for reads
-
-var hits atomic.Int64                // lock-free counter for a single number
-hits.Add(1)
-hits.Load()
-
-var once sync.Once
-once.Do(initialize)                  // run exactly once, even when called from many goroutines
+// shared memory between workers: an atomic counter
+const shared = new SharedArrayBuffer(4);
+const counter = new Int32Array(shared);
+Atomics.add(counter, 0, 1);                              // safe increment from any thread
+Atomics.load(counter, 0);
+// counter[0]++                                          // NOT atomic: lost updates when two workers do it
 ```
 
-Never copy a mutex after first use (pass the struct by pointer); `go vet` reports it.
+## Race Conditions in TypeScript
 
-## Channels vs Shared Memory with a Mutex
+Because one thread runs your code, ordinary variables cannot be corrupted by two threads at once, and the "concurrent map writes" crash does not exist. Race conditions still happen across `await`: any `await` lets other code run, so a "check, then act" pair that spans an `await` can be interleaved.
 
-Go's slogan is "do not communicate by sharing memory; share memory by communicating". Both tools are correct; they fit different jobs.
+```ts
+let balance = 100;
 
-* Channels move ownership of data or signal an event: pipelines, worker pools, fan-in/fan-out, "work is done", "stop now". Only one goroutine touches a value at a time because it is handed over.
-* A mutex protects state that many goroutines read or update in place: counters, caches, maps, a struct's fields. It is simpler and cheaper for that job.
-* Channels cost more per operation and can deadlock or leak goroutines when nobody receives; a mutex can be forgotten or held too long.
-* If you find yourself building a channel dance just to protect one map, use a mutex. If you are handing work from stage to stage, use channels.
+async function withdraw(amount: number): Promise<void> {
+  if (balance >= amount) {          // check
+    await audit(amount);            // other code runs here!
+    balance -= amount;              // act: balance may have changed meanwhile
+  }
+}
 
-```go
-// The same counter, owned by one goroutine that everyone talks to through a channel
-type op struct{ key string; reply chan int }
+await Promise.all([withdraw(80), withdraw(80)]);
+console.log(balance);               // -60: both passed the check before either subtracted
+```
 
-func counterServer(ops <-chan op) {
-    counts := map[string]int{}       // only this goroutine ever touches the map
-    for o := range ops {
-        counts[o.key]++
-        o.reply <- counts[o.key]
+Fixes: keep the check and the update together with no `await` between them (the code between two `await`s runs without interruption), or run the critical section through a small promise-based lock so that one caller at a time enters:
+
+```ts
+class Mutex {
+  private tail: Promise<unknown> = Promise.resolve();
+
+  run<T>(fn: () => Promise<T>): Promise<T> {
+    const result = this.tail.then(fn);        // start fn only after the previous holder finished
+    this.tail = result.catch(() => {});       // keep the chain alive even if fn fails
+    return result;
+  }
+}
+
+const lock = new Mutex();
+async function safeWithdraw(amount: number) {
+  await lock.run(async () => {
+    if (balance >= amount) {
+      await audit(amount);
+      balance -= amount;                      // check and update are now protected
     }
+  });
 }
 ```
 
-## Worker Pool
+A true data race (two threads touching the same memory with no ordering) is possible only with `SharedArrayBuffer`; use `Atomics`. There is no built-in race detector: you find races with careful design, tests that run operations concurrently (`Promise.all`), and by keeping shared state to a minimum.
 
-```go
-func worker(jobs <-chan int, results chan<- int, wg *sync.WaitGroup) {
-    defer wg.Done()
-    for j := range jobs {
-        results <- j * j
-    }
-}
+## Deadlocks and Hangs in TypeScript
 
-func main() {
-    jobs := make(chan int, 10)
-    results := make(chan int, 10)
+A "deadlock" in JavaScript is usually a promise that never settles, so the code awaiting it never continues.
 
-    var wg sync.WaitGroup
-    for w := 0; w < 3; w++ {
-        wg.Add(1)
-        go worker(jobs, results, &wg)
-    }
+```ts
+await new Promise<void>(() => {});          // never resolved: this await waits forever
+// (if nothing else keeps the event loop busy, Node exits silently; a pending timer or socket keeps it running, so it just hangs)
 
-    for i := 1; i <= 5; i++ {
-        jobs <- i
-    }
-    close(jobs)                      // no more jobs: workers leave their range loops
-    wg.Wait()
-    close(results)
+async function a(): Promise<void> { await b(); }
+async function b(): Promise<void> { await a(); }    // a waits for b, b waits for a: infinite recursion or a stuck chain
 
-    for r := range results {
-        fmt.Println(r)
-    }
-}
+// A lock that is waited on from inside itself can never be acquired
+await lock.run(async () => {
+  await lock.run(async () => {});            // waits for the outer run to finish, which waits for this: stuck forever
+});
 ```
 
-## Race Conditions and Data Races
-
-A data race is a specific, precisely defined bug: two goroutines access the same memory at the same time, at least one of them writes, and nothing orders the accesses (no mutex, channel, or atomic). The result is unpredictable, and the Go memory model gives no guarantees. A race condition is broader: the outcome depends on timing, even if every individual access is synchronized (for example, checking a balance under one lock and withdrawing under another).
-
-```go
-counter := 0
-var wg sync.WaitGroup
-for i := 0; i < 1000; i++ {
-    wg.Add(1)
-    go func() {
-        defer wg.Done()
-        counter++                    // DATA RACE: read, add, write from many goroutines
-    }()
-}
-wg.Wait()
-fmt.Println(counter)                 // often less than 1000
-```
-
-Fixes: wrap the update in a mutex, use `atomic.Int64`, or let one goroutine own the counter and send it increments over a channel.
-
-How to detect a data race: run or test with the race detector.
-
-```bash
-go run -race .
-go test -race ./...
-go build -race
-```
-
-```text
-==================
-WARNING: DATA RACE
-Write at 0x00c0000a6010 by goroutine 8:
-  main.main.func1()
-      /app/main.go:14 +0x...
-
-Previous write at 0x00c0000a6010 by goroutine 7:
-  main.main.func1()
-      /app/main.go:14 +0x...
-==================
-```
-
-The detector only reports races that actually happen during that run, and it makes the program several times slower and hungrier for memory, so use it in tests and CI with realistic concurrent load, not in production. Writing to a map from two goroutines is detected even without `-race` and crashes with `fatal error: concurrent map writes`.
-
-## Deadlocks in Go
-
-A deadlock is when goroutines wait on each other forever. When every goroutine is blocked, the runtime stops the program:
-
-```text
-fatal error: all goroutines are asleep - deadlock!
-```
-
-```go
-ch := make(chan int)
-ch <- 1                              // unbuffered send with no receiver: main blocks forever
-
-var wg sync.WaitGroup
-wg.Add(1)
-wg.Wait()                            // Done is never called
-
-mu.Lock()
-mu.Lock()                            // Go mutexes are not re-entrant: locking twice deadlocks
-```
-
-The runtime only notices when everything is stuck. A deadlock among some goroutines while others still run is not reported; it looks like a hang or a goroutine leak. Prevent it with consistent lock ordering, timeouts and context cancellation on every blocking operation, and by making clear who closes each channel. To investigate, send `SIGQUIT` (Ctrl+\) to dump all goroutine stacks, or use pprof's goroutine profile.
+Prevent them with timeouts on everything that waits (`Promise.race` with a timer, `AbortSignal.timeout()`), by never re-entering a lock you already hold, by acquiring multiple locks in one fixed order, and by making sure every promise you create is resolved or rejected on every path. To investigate a hang, run with `node --inspect` and pause in DevTools, or log `process.getActiveResourcesInfo()` to see what keeps the process alive.
 
 ## Shared State Guidelines
 
-* Prefer not sharing: give each goroutine its own data, or hand data off through a channel
-* If you must share, guard it with one clearly named mutex, document which fields it protects, and keep critical sections small
-* Treat shared data that is never modified after creation as safe
-* Do not start a goroutine unless you know how and when it will stop
-* Run tests with `-race` as a habit
+* Prefer not sharing: give each task its own data, or pass data as arguments and return values
+* Keep "check, then act" sequences free of `await` in the middle, or protect them with a lock
+* Keep shared module-level state small and well named; a `Map` used as a cache is shared by every request
+* Treat data that is never modified after creation (`readonly`, `Object.freeze`, `as const`) as safe
+* Do not start a promise or timer unless you know how and when it will finish (and who handles its error)
+* Share memory between workers only through `SharedArrayBuffer` with `Atomics`, and prefer messages
 
 ---
 
@@ -4179,261 +5028,355 @@ stop.set()                                   # ask it to stop
 t.join()
 ```
 
-## context.Context in Go
+## AbortController and AbortSignal in TypeScript
 
-A `context.Context` carries a cancellation signal, an optional deadline, and request-scoped values through a call chain. When it is cancelled, its `Done()` channel closes, and everything that listens should stop and return `ctx.Err()`.
+A promise cannot be cancelled from outside, so JavaScript uses a cooperative signal, the same idea as Python's `threading.Event` flag. An `AbortController` creates an `AbortSignal`; calling `controller.abort()` marks the signal as aborted and fires its `abort` event. Everything that was given the signal (fetch, file operations, timers, your own code) checks it and stops.
 
-```go
-ctx := context.Background()                          // root context: never cancelled
-ctx, cancel := context.WithCancel(ctx)               // cancel manually
-ctx, cancel = context.WithTimeout(ctx, 2*time.Second) // cancelled automatically after 2s
-ctx, cancel = context.WithDeadline(ctx, time.Now().Add(time.Minute))
-defer cancel()                                       // ALWAYS call cancel to release resources
+```ts
+const controller = new AbortController();
+const { signal } = controller;
 
-ctx.Err()                                            // nil, context.Canceled, or context.DeadlineExceeded
+signal.addEventListener("abort", () => console.log("cancelled:", signal.reason));
+controller.abort();                                   // or controller.abort(new Error("user pressed stop"))
+signal.aborted;                                       // true
+signal.reason;                                        // why it was aborted (an AbortError DOMException by default)
+
+const timeoutSignal = AbortSignal.timeout(2000);      // aborts itself after 2 s, with a TimeoutError reason
+const either = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]);   // aborted when ANY of them aborts
+signal.throwIfAborted();                              // throws the reason if the signal is already aborted
 ```
 
-Conventions: `ctx` is the first parameter (`func Fetch(ctx context.Context, id int) error`), you pass it down to everything that can block, and you do not store it in a struct.
+Conventions: a function that can be cancelled takes a `signal?: AbortSignal` (often inside an options object), passes it down to everything that can block, and does not store it for later.
 
-```go
-func worker(ctx context.Context, jobs <-chan int) error {
-    for {
-        select {
-        case <-ctx.Done():                           // told to stop
-            return ctx.Err()
-        case j, ok := <-jobs:
-            if !ok {
-                return nil                           // no more work
-            }
-            process(j)
-        }
+```ts
+import { setTimeout as sleep } from "node:timers/promises";    // a sleep that understands signals
+
+async function longJob(signal: AbortSignal): Promise<void> {
+  try {
+    await sleep(60_000, undefined, { signal });                 // rejects with an AbortError when aborted
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      console.log("cleaning up");                               // release resources, then re-throw
     }
+    throw e;
+  }
 }
 
-// Outgoing HTTP call that obeys the context
-req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-resp, err := http.DefaultClient.Do(req)              // returns early if ctx is cancelled
-// database: db.QueryContext(ctx, "SELECT ...")
+const controller2 = new AbortController();
+const job = longJob(controller2.signal);
+setTimeout(() => controller2.abort(), 1000);                    // cancel after 1 s
+try {
+  await job;
+} catch {
+  console.log("cancelled");
+}
+
+// A worker loop that checks the signal between jobs
+async function worker(jobs: AsyncIterable<number>, signal: AbortSignal): Promise<void> {
+  for await (const job of jobs) {
+    signal.throwIfAborted();                                    // stop between jobs
+    await handle(job);
+  }
+}
+
+// Outgoing HTTP call that obeys the signal
+const res = await fetch("https://example.com/slow", { signal: AbortSignal.timeout(2000) });
+// fs.readFile(path, { signal }), events.once(emitter, "x", { signal }), and timers/promises accept signals too
 ```
+
+Synchronous code cannot be interrupted: a `for` loop with no `await` ignores the signal and blocks every other task. In a long computation, check `signal.aborted` between iterations and, in the main thread, give the event loop a chance to run (`await setImmediate()` from `node:timers/promises`) or move the work to a worker thread.
 
 ## Stopping Work When an HTTP Request Is Cancelled
 
-Each incoming request carries a context. `r.Context()` is cancelled when the client disconnects, when the request is cancelled, or when the handler returns. Pass it to every slow operation, and those operations stop on their own.
+When a client disconnects before the response is finished, the response object emits `"close"` without having finished writing. Turn that into an abort signal and pass it to every slow operation, and those operations stop on their own.
 
-```go
-func handler(w http.ResponseWriter, r *http.Request) {
-    ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)   // also enforce our own deadline
-    defer cancel()
+```ts
+import { createServer } from "node:http";
+import { setTimeout as sleep } from "node:timers/promises";
 
-    result, err := slowQuery(ctx)
-    switch {
-    case errors.Is(err, context.Canceled):
-        return                                                       // the client is gone: nobody to answer
-    case errors.Is(err, context.DeadlineExceeded):
-        http.Error(w, "timeout", http.StatusGatewayTimeout)
-        return
-    case err != nil:
-        http.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
-    fmt.Fprintln(w, result)
+async function slowQuery(signal: AbortSignal): Promise<string> {
+  await sleep(5000, undefined, { signal });                     // stands in for slow work
+  return "done";
 }
 
-func slowQuery(ctx context.Context) (string, error) {
-    select {
-    case <-time.After(5 * time.Second):                              // stands in for slow work
-        return "done", nil
-    case <-ctx.Done():
-        return "", ctx.Err()                                         // stop immediately
+const server = createServer(async (req, res) => {
+  const clientGone = new AbortController();
+  res.on("close", () => {
+    if (!res.writableFinished) clientGone.abort();              // the client disconnected early
+  });
+  const signal = AbortSignal.any([clientGone.signal, AbortSignal.timeout(2000)]);   // also enforce our own deadline
+
+  try {
+    const result = await slowQuery(signal);
+    res.end(result);
+  } catch (e) {
+    if (clientGone.signal.aborted) return;                      // the client is gone: nobody to answer
+    if (signal.aborted && (signal.reason as Error).name === "TimeoutError") {
+      res.writeHead(504).end("timeout");
+      return;
     }
-}
+    res.writeHead(500).end((e as Error).message);
+  }
+});
+server.listen(8080);
 ```
 
-In a loop doing CPU work, check the context between iterations (`if ctx.Err() != nil { return ctx.Err() }`). A goroutine that ignores its context cannot be stopped and will leak.
+A task that ignores its signal cannot be stopped and keeps running (and keeps its memory) after the request is over.
 
 ## Graceful Shutdown
 
-```go
-func main() {
-    ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-    defer stop()
+```ts
+const server = createServer(handler).listen(8080);
 
-    srv := &http.Server{Addr: ":8080", Handler: mux}
-    go func() {
-        if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-            log.Fatal(err)
-        }
-    }()
-
-    <-ctx.Done()                                                     // wait for Ctrl+C or SIGTERM
-
-    shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-    defer cancel()
-    srv.Shutdown(shutdownCtx)                                        // stop accepting, let in-flight requests finish
+function shutdown(reason: string): void {
+  console.log(`${reason} received, shutting down`);
+  server.close(() => {                           // stop accepting connections; this callback runs when in-flight requests finish
+    process.exit(0);
+  });
+  server.closeIdleConnections();                 // drop idle keep-alive connections so close() can complete
+  setTimeout(() => process.exit(1), 10_000).unref();   // hard stop after 10 s; unref() so this timer alone does not keep Node alive
 }
+
+process.on("SIGINT", () => shutdown("SIGINT"));      // Ctrl+C
+process.on("SIGTERM", () => shutdown("SIGTERM"));    // what Docker, Kubernetes and most process managers send
 ```
 
 ---
 
-# Structs, Methods and Interfaces in Go
+# Types, Interfaces and Classes in TypeScript
 
-Go has no classes and no inheritance. It models data with structs, behavior with methods, abstraction with interfaces, and code reuse with composition. The Python OOP section below covers the class-based version of the same ideas.
+TypeScript models data with object types and interfaces, behavior with classes and functions, abstraction with interfaces, and code reuse with composition. Unlike Python, the types are checked by the compiler by their shape (structural typing) and are erased at run time. The Python OOP section below covers the class-based version of the same ideas.
 
-## Structs and Methods
+## Object Types, Interfaces and Type Aliases
 
-```go
-type Car struct {
-    Brand string
-    Model string
-    wheels int                       // lowercase field: private to the package
+```ts
+// An object type written inline, as a type alias, or as an interface
+type Car = { brand: string; model: string };
+
+interface Point {
+  x: number;
+  y: number;
+  label?: string;                  // optional property: string | undefined
+  readonly id: number;             // cannot be assigned after creation
 }
 
-func NewCar(brand, model string) *Car {          // constructor by convention: a function named NewX
-    return &Car{Brand: brand, Model: model, wheels: 4}
-}
+const p: Point = { x: 1, y: 2, id: 7 };
+// p.id = 8;                       // compile error: Cannot assign to 'id' because it is a read-only property
+// p.z = 3;                        // compile error: Property 'z' does not exist on type 'Point'
 
-func (c Car) Info() string {                      // method: a function with a receiver
-    return c.Brand + " " + c.Model
-}
+interface Point3D extends Point { z: number }           // interfaces can extend each other
 
-car := NewCar("Toyota", "Corolla")
-fmt.Println(car.Info())                           // Toyota Corolla
-
-p := Car{Brand: "Honda"}                          // unset fields get zero values
-q := Car{"Honda", "Civic", 4}                     // positional literal (fragile, avoid for big structs)
+type ID = string | number;                              // a type alias can name any type, including unions
+type Pair<T> = [T, T];                                  // ... and generics
 ```
 
-## Pointer Receivers
+* `interface` and `type` overlap: both describe object shapes. Interfaces can be extended and merged (declared twice to add properties); type aliases can also name unions, tuples, and function types. Pick one style and stay consistent.
+* An object literal with a property the type does not mention is rejected (excess property check); a variable with extra properties is accepted (structural typing).
+* Fields with no value set stay `undefined` (see Default Values); mark them optional (`?`) or give them a default.
 
-A method receives the value it is called on as a copy (value receiver) or as a pointer (pointer receiver).
+## Classes
 
-```go
-type Counter struct{ n int }
+```ts
+class Car {
+  static wheels = 4;                                    // class attribute (shared by all cars)
+  private odometer = 0;                                 // private to the class: checked by the compiler only
+  #secret = "abc";                                      // # private: enforced at run time too
 
-func (c Counter) IncValue()  { c.n++ }            // value receiver: works on a COPY, caller sees no change
-func (c *Counter) Inc()      { c.n++ }            // pointer receiver: changes the original
+  constructor(public brand: string, public model: string) {}   // "parameter properties": declare AND assign in one go
 
-var c Counter
-c.IncValue()
-fmt.Println(c.n)                                  // 0
-c.Inc()                                           // Go takes &c for you because c is addressable
-fmt.Println(c.n)                                  // 1
+  info(): string {                                      // method
+    return `${this.brand} ${this.model}`;
+  }
+
+  get mileage(): number { return this.odometer; }       // getter: car.mileage reads like a field
+  set mileage(value: number) {                          // setter with validation
+    if (value < 0) throw new RangeError("mileage cannot be negative");
+    this.odometer = value;
+  }
+
+  static create(brand: string): Car {                   // static method: called on the class, not an instance
+    return new Car(brand, "unknown");
+  }
+}
+
+const car = new Car("Toyota", "Corolla");
+console.log(car.info());                                // Toyota Corolla
+car.mileage = 1000;
+Car.wheels;                                             // 4
+Car.create("Honda");
+// car.odometer;                                        // compile error: Property 'odometer' is private
 ```
 
-When should a method use a pointer receiver?
-
-* The method modifies the receiver
-* The struct is large and copying it on every call would be wasteful
-* The struct contains something that must not be copied (`sync.Mutex`, `sync.WaitGroup`, a buffer)
-* Consistency: if any method needs a pointer receiver, use pointer receivers for all methods of that type
-* Use value receivers for small, immutable-style types (`time.Time`, small structs, named basic types like `type Celsius float64`)
-
-## Composition with Embedding
-
-Embedding a type in a struct promotes its fields and methods to the outer type. This is "has-a" that reads like "is-a", but there is no inheritance: the embedded value is a normal field you can also reach by name.
-
-```go
-type Logger struct{ prefix string }
-
-func (l Logger) Log(msg string) { fmt.Println(l.prefix + msg) }
-
-type Server struct {
-    Logger                                         // embedded: Server gets Log()
-    Addr string
+```ts
+// Inheritance and abstract classes
+abstract class Shape {
+  abstract area(): number;                              // subclasses must implement it
+  describe(): string { return `area ${this.area().toFixed(2)}`; }
 }
 
-s := Server{Logger: Logger{prefix: "[srv] "}, Addr: ":8080"}
-s.Log("starting")                                  // promoted method; same as s.Logger.Log(...)
+class Circle extends Shape {
+  constructor(private radius: number) { super(); }      // super() must run before using this
+  override area(): number { return Math.PI * this.radius ** 2; }
+}
 
-// The outer type can define its own method with the same name (it shadows the embedded one)
-func (s Server) Log(msg string) { s.Logger.Log("server: " + msg) }
+class Sedan extends Car {
+  constructor(brand: string, model: string, public doors: number) {
+    super(brand, model);
+  }
+  override info(): string {                             // "override" is checked: a typo becomes a compile error
+    return `${super.info()} (${this.doors} doors)`;
+  }
+}
+
+// new Shape();                                         // compile error: Cannot create an instance of an abstract class
 ```
 
-Embedding does not give polymorphism by itself: the embedded type's methods run with the embedded value as receiver and know nothing about the outer type. Use interfaces for polymorphism.
+## Methods and `this`
 
-## Interfaces
+In a method, `this` is the object the method was called on. The catch is that `this` is decided by how a function is called, not where it was written. Pulling a method off its object loses `this`.
 
-An interface is a set of method signatures. In Go, a type implements an interface simply by having those methods: there is no `implements` keyword. This is called implicit (structural) satisfaction, and the compiler checks it. It is like Python's duck typing, but verified at compile time.
-
-```go
-type Notifier interface {
-    Send(message string) error
+```ts
+class Counter {
+  n = 0;
+  inc() { this.n++; }                       // regular method: `this` depends on the call
+  incArrow = () => { this.n++; };           // arrow function property: `this` is fixed to the instance
 }
 
-type EmailNotifier struct{ To string }
+const c = new Counter();
+c.inc();                                    // fine: called as c.inc()
 
-func (e EmailNotifier) Send(message string) error {
-    fmt.Println("email to", e.To+":", message)
-    return nil
-}
-
-type SlackNotifier struct{ Channel string }
-
-func (s SlackNotifier) Send(message string) error {
-    fmt.Println("slack", s.Channel+":", message)
-    return nil
-}
-
-func alert(n Notifier, msg string) error {         // works with ANY type that has Send(string) error
-    return n.Send(msg)
-}
-
-alert(EmailNotifier{To: "ops@example.com"}, "deploy done")
-alert(SlackNotifier{Channel: "#ops"}, "deploy done")
+const detached = c.inc;
+// detached();                              // TypeError: Cannot read properties of undefined (reading 'n')
+const bound = c.inc.bind(c);                // bind fixes `this`
+bound();
+setTimeout(c.incArrow, 0);                  // safe: the arrow function keeps this
+setTimeout(() => c.inc(), 0);               // also safe
 ```
 
-How does a type implement an interface in Go? By defining every method of the interface with the exact names and signatures. The type does not need to know the interface exists, so interfaces can be defined by the code that uses them, even for types from other packages.
+Python's bound methods never lose `self`; in TypeScript, pass callbacks as arrow functions or bind them. The same issue is why a method passed to `setTimeout`, `addEventListener`, or `.map` can break.
+
+## Composition
+
+Prefer "has-a" over "is-a": store another object in a field and call it. TypeScript classes have single inheritance, so composition (and interfaces) is the normal way to combine behavior.
+
+```ts
+class Logger {
+  constructor(private prefix: string) {}
+  log(msg: string): void { console.log(this.prefix + msg); }
+}
+
+class Server {
+  constructor(private logger: Logger, public addr: string) {}   // the dependency is passed in
+  start(): void { this.logger.log(`starting on ${this.addr}`); }
+}
+
+new Server(new Logger("[srv] "), ":8080").start();
+```
+
+```ts
+// Mixins: a function that takes a class and returns a class with extra behavior (a substitute for multiple inheritance)
+type Constructor<T = {}> = new (...args: any[]) => T;
+
+function Timestamped<TBase extends Constructor>(Base: TBase) {
+  return class extends Base {
+    createdAt = new Date();
+  };
+}
+
+class User { constructor(public name: string) {} }
+const TimestampedUser = Timestamped(User);
+const u = new TimestampedUser("Alice");
+u.createdAt;                                // Date
+```
+
+## Interfaces and `implements`
+
+An interface is a set of property and method signatures. A class can promise to follow one with `implements`, and the compiler checks it. But because typing is structural, a plain object (or a class that never mentions the interface) fits as well if it has the right members. This is Python's duck typing, verified at compile time.
+
+```ts
+interface Notifier {
+  send(message: string): void | Promise<void>;
+}
+
+class EmailNotifier implements Notifier {
+  constructor(private to: string) {}
+  send(message: string): void { console.log(`email to ${this.to}: ${message}`); }
+}
+
+class SlackNotifier {                                    // does not say "implements": still fits
+  constructor(private channel: string) {}
+  send(message: string): void { console.log(`slack ${this.channel}: ${message}`); }
+}
+
+const sms = { send(message: string) { console.log("sms:", message); } };   // a plain object fits too
+
+function alert(n: Notifier, msg: string) {              // works with ANY value that has send(string)
+  return n.send(msg);
+}
+
+alert(new EmailNotifier("ops@example.com"), "deploy done");
+alert(new SlackNotifier("#ops"), "deploy done");
+alert(sms, "deploy done");
+```
 
 Guidelines:
 
-* Keep interfaces small (one to three methods); the standard library's `io.Reader`, `io.Writer`, `fmt.Stringer`, and `error` have one method each
-* Define the interface where it is used (the consumer), not next to the implementation
-* "Accept interfaces, return concrete types"
-* A compile-time check that a type satisfies an interface: `var _ Notifier = (*EmailNotifier)(nil)`
+* Keep interfaces small (one to three members); define the interface where it is used (the consumer), not next to the implementation
+* Ask for the narrowest type you need in a parameter (an interface, or `readonly number[]` instead of `number[]`), and return a concrete type
+* `implements` is optional documentation with a compile-time check; `abstract class` is the choice when you also want shared code
+* An interface exists only at compile time: `x instanceof Notifier` does not work. Use classes with `instanceof`, or check properties (`"send" in x`).
 
-## Interface Satisfaction and Pointer Receivers
+## unknown, any, Narrowing and Type Guards
 
-The methods a type has decide which interfaces it satisfies. A value of type `T` has only the value-receiver methods; a `*T` has both value and pointer receiver methods.
+`unknown` is the safe "anything" type: you cannot use the value until you have checked what it is. `any` switches checking off. Checking narrows the type inside the branch.
 
-```go
-type Speaker interface{ Speak() string }
+```ts
+let x: unknown = "hello";
 
-type Dog struct{}
-func (d *Dog) Speak() string { return "Woof" }     // pointer receiver
-
-// var s Speaker = Dog{}      // compile error: Dog does not implement Speaker (method Speak has pointer receiver)
-var s Speaker = &Dog{}        // ok: *Dog has Speak
-```
-
-## Empty Interface, Type Assertions and Type Switches
-
-```go
-var x any = "hello"                 // any = interface{}: holds a value of any type
-
-s, ok := x.(string)                 // type assertion, safe form
-n := x.(int)                        // panics because x holds a string
-
-switch v := x.(type) {              // type switch
-case int:
-    fmt.Println("int", v+1)
-case string:
-    fmt.Println("string", strings.ToUpper(v))
-case nil:
-    fmt.Println("nothing")
-default:
-    fmt.Printf("other %T\n", v)
+if (typeof x === "string") {
+  x.toUpperCase();                      // x is string here
+} else if (typeof x === "number") {
+  x.toFixed(2);                         // x is number here
+} else if (x instanceof Date) {
+  x.getFullYear();
+} else if (Array.isArray(x)) {
+  x.length;                             // any[]
 }
+
+// A user-defined type guard: tells the compiler what a true result means
+interface Cat { meow(): void }
+interface Dog { bark(): void }
+function isCat(pet: Cat | Dog): pet is Cat {
+  return "meow" in pet;
+}
+function speak(pet: Cat | Dog) {
+  if (isCat(pet)) pet.meow();           // narrowed to Cat
+  else pet.bark();                      // narrowed to Dog
+}
+
+// Discriminated union: a shared literal field picks the variant (the TypeScript "type switch"; see Conditionals)
+type Msg = { kind: "text"; body: string } | { kind: "image"; url: string };
+function show(m: Msg) {
+  switch (m.kind) {
+    case "text": return m.body;
+    case "image": return m.url;
+  }
+}
+
+const n = x as number;                  // assertion: no check, the compiler just believes you
+const config = { port: 8080 } satisfies Record<string, number>;   // checks the shape but keeps the precise type
 ```
 
-An interface value internally holds a (type, value) pair, which is why a nil `*T` stored in an interface is not a nil interface (see None, nil, and NULL).
+## How TypeScript Differs from Python's Class-Based OOP
 
-## How Go Differs from Class-Based OOP
-
-* No classes: data (struct) and behavior (methods) are declared separately
-* No inheritance: compose with embedding, abstract with interfaces
-* No method overloading and no operator overloading
-* No constructors or destructors: use `NewX` functions and `defer`/`Close()`
-* Visibility is by capitalization of the name, not by `public` / `private` keywords
+* Types are erased: there is no run-time record of an interface or type alias, only of classes (`instanceof`)
+* Typing is structural, not nominal: a value fits a type if it has the right members, whatever it was declared as
+* `private` is a compile-time rule; `#field` is truly private at run time; Python's `_name` and `__name` are conventions and name mangling
+* Single inheritance only (`extends` one class); combine behavior with interfaces, composition, and mixins
+* No operator overloading and no `__dunder__` methods; the protocols that do exist use `Symbol` keys (`Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.dispose`) and `toString`/`toJSON`
+* No method overloading at run time: overload signatures only describe the types of one implementation
+* `get` and `set` replace `@property`; `static` replaces `@staticmethod` and `@classmethod`; `constructor` replaces `__init__`, and there is no `__del__` (use `try`/`finally` or `using`)
+* `this` replaces `self`, but it is not passed automatically through a detached method (see above)
 
 ---
 
@@ -5107,36 +6050,113 @@ def chain_two(a, b):
 
 Generators are single use. Once consumed they are empty, so keep the function around and call it again to start over. `itertools` (`islice`, `chain`, `count`, `groupby`, `product`) provides ready-made building blocks for lazy pipelines.
 
-## Iteration in Go
+## Iteration in TypeScript
 
-`range` iterates over slices, arrays, strings, maps, channels, and integers. Since Go 1.23 it also works over functions, which makes custom iterators possible (the equivalent of generators).
+TypeScript uses the JavaScript iteration protocol, which matches Python's. An iterable has a method under the key `Symbol.iterator` that returns an iterator; an iterator has `next()` that returns `{ value, done }`. `for...of`, spread (`...`), destructuring, `Array.from`, `Map`, and `Set` all use it.
 
-```go
-for i, v := range []string{"a", "b"} {}      // index, value
-for i := range 3 {}                           // 0 1 2
-for r := range ch {}                          // receives from a channel until it is closed
+```ts
+const nums = [1, 2, 3];                   // an iterable (an array is NOT an iterator)
+const it = nums[Symbol.iterator]();       // get an iterator
+it.next();                                // { value: 1, done: false }
+it.next();                                // { value: 2, done: false }
+it.next();                                // { value: 3, done: false }
+it.next();                                // { value: undefined, done: true }   (no exception, unlike StopIteration)
 
-// Custom iterator: a function that calls yield for each value (Go 1.23+)
-func Countdown(n int) iter.Seq[int] {
-    return func(yield func(int) bool) {
-        for i := n; i > 0; i-- {
-            if !yield(i) {                    // yield returns false when the loop used break
-                return
-            }
-        }
-    }
+[...it];                                  // []   the iterator is exhausted (it is also iterable, returning itself)
+
+for (const [i, v] of ["a", "b"].entries()) {}   // index and value
+for (const ch of "héllo") {}                    // strings iterate by code point
+for (const [k, v] of new Map([["a", 1]])) {}    // Maps give [key, value] pairs
+
+// A custom iterator, written by hand (the Counter example)
+class Counter implements Iterable<number> {
+  constructor(private limit: number) {}
+  [Symbol.iterator](): Iterator<number> {
+    let n = 0;
+    const limit = this.limit;
+    return {
+      next: (): IteratorResult<number> =>
+        n < limit ? { value: ++n, done: false } : { value: undefined, done: true },
+    };
+  }
 }
-
-for v := range Countdown(3) {
-    fmt.Println(v)                            // 3 2 1
-}
-
-// Helpers in the standard library
-keys := slices.Sorted(maps.Keys(m))           // sorted map keys
-for _, v := range slices.Values(items) {}
+for (const num of new Counter(3)) console.log(num);    // 1 2 3
 ```
 
-Before range-over-func, a "generator" in Go was a goroutine that sends on a channel (see the producer example in Concurrency in Go). That works, but if the consumer stops early the goroutine stays blocked forever, so give it a `context` or `done` channel to quit.
+### Generators and yield
+
+A function declared with `function*` is a generator function. Calling it does not run the body; it returns a generator, which is an iterator. Each `next()` runs the body to the next `yield`, hands out that value, and pauses with the locals intact. The values are produced lazily.
+
+```ts
+function* countUp(limit: number): Generator<number> {
+  console.log("start");
+  let n = 1;
+  while (n <= limit) {
+    yield n;                               // pause here and give n to the caller
+    n++;
+  }
+  console.log("finished");
+}
+
+const gen = countUp(2);                    // nothing printed yet
+gen.next();                                // prints "start", returns { value: 1, done: false }
+gen.next();                                // { value: 2, done: false }
+gen.next();                                // prints "finished", returns { value: undefined, done: true }
+
+// The easiest way to make a class iterable: a generator method
+class Range implements Iterable<number> {
+  constructor(private start: number, private end: number) {}
+  *[Symbol.iterator](): Generator<number> {
+    for (let i = this.start; i < this.end; i++) yield i;
+  }
+}
+[...new Range(2, 5)];                      // [2, 3, 4]
+```
+
+```ts
+// Infinite sequence: impossible with an array, trivial with a generator
+function* fibonacci(): Generator<number> {
+  let [a, b] = [0, 1];
+  while (true) {
+    yield a;
+    [a, b] = [b, a + b];
+  }
+}
+
+function* take<T>(iterable: Iterable<T>, n: number): Generator<T> {      // Python: itertools.islice
+  if (n <= 0) return;
+  let i = 0;
+  for (const value of iterable) {
+    yield value;
+    if (++i >= n) return;
+  }
+}
+[...take(fibonacci(), 10)];                // [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+// newer runtimes also have iterator helpers: fibonacci().take(10).toArray()
+
+// Process a huge file without loading it: an ASYNC generator over lines
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
+
+async function* longLines(path: string): AsyncGenerator<string> {
+  const rl = createInterface({ input: createReadStream(path, "utf-8") });
+  for await (const line of rl) {
+    if (line.length > 80) yield line;
+  }
+}
+for await (const line of longLines("data.txt")) console.log(line);
+
+// yield* delegates to another iterable
+function* chainTwo<T>(a: Iterable<T>, b: Iterable<T>): Generator<T> {
+  yield* a;
+  yield* b;
+}
+```
+
+* There are no generator expressions: use a generator function, or `map`/`filter` on arrays (which are eager and build a new array)
+* A generator is single use; once consumed it is empty, so call the generator function again to start over
+* `for await (... of ...)` and `async function*` combine iteration with `await` for data that arrives over time (streams, paginated APIs); arrays' own `map`/`filter`/`forEach` are not lazy and do not await
+* Libraries such as `iter-tools` or the built-in iterator helpers (in newer runtimes) offer the `itertools` building blocks
 
 ---
 
@@ -5232,62 +6252,106 @@ def process(value: Union[int, str]) -> str:
 
 **Key rule:** Generics document *what type goes in and out* without hardcoding a single type — the same function/class works safely across `int`, `str`, custom objects, etc.
 
-## Generics in Go
+## Generics in TypeScript
 
-Go has had type parameters since 1.18. Unlike Python's hints, they are enforced by the compiler.
+Generics are a core part of TypeScript, and they are enforced by the compiler (Python's are only hints). A type parameter goes in angle brackets, and the compiler usually infers it from the arguments.
 
-```go
-// A type parameter list in square brackets; "any" means no restriction
-func First[T any](items []T) T {
-    return items[0]
+```ts
+// Generic function: T is inferred from the argument
+function first<T>(items: T[]): T | undefined {
+  return items[0];
 }
-First([]int{1, 2, 3})            // 1   T is inferred from the argument
-First([]string{"a", "b"})        // "a"
+first([1, 2, 3]);                   // number | undefined
+first(["a", "b"]);                  // string | undefined
 
-// A constraint limits which types are allowed
-func Max[T cmp.Ordered](a, b T) T {          // cmp.Ordered: integers, floats, strings
-    if a > b {
-        return a
-    }
-    return b
+// A constraint limits which types are allowed (Python: bound / constrained TypeVar)
+function double<T extends number | bigint>(x: T): T {
+  return ((x as any) * (typeof x === "bigint" ? 2n : 2)) as T;
 }
 
-type Number interface {
-    ~int | ~int64 | ~float64                 // a union; ~ also accepts types defined from these
+function longest<T extends { length: number }>(a: T, b: T): T {      // anything with a length: strings, arrays
+  return a.length >= b.length ? a : b;
+}
+longest("abc", "de");               // "abc"
+longest([1, 2], [1, 2, 3]);         // [1, 2, 3]
+
+// Several type parameters, and a default
+function pair<A, B = string>(a: A, b: B): [A, B] {
+  return [a, b];
 }
 
-func Sum[T Number](nums []T) T {
-    var total T
-    for _, n := range nums {
-        total += n
-    }
-    return total
+// Generic class
+class Box<T> {
+  constructor(private item: T) {}
+  get(): T { return this.item; }
 }
+const intBox = new Box(123);        // Box<number>
+const strBox = new Box("hello");    // Box<string>
 
-// Generic helpers Go does not ship as built-ins
-func Map[T, U any](items []T, f func(T) U) []U {
-    out := make([]U, 0, len(items))
-    for _, it := range items {
-        out = append(out, f(it))
-    }
-    return out
+// Generic interface and type alias
+interface Repository<T extends { id: number }> {
+  find(id: number): Promise<T | undefined>;
+  save(item: T): Promise<void>;
 }
+type ApiResponse<T> = { data: T; error?: string };
 
-// Generic type
-type Stack[T any] struct{ items []T }
-
-func (s *Stack[T]) Push(item T) { s.items = append(s.items, item) }
-func (s *Stack[T]) Pop() T {
-    last := s.items[len(s.items)-1]
-    s.items = s.items[:len(s.items)-1]
-    return last
+// Generic stack
+class Stack<T> {
+  private items: T[] = [];
+  push(item: T): void { this.items.push(item); }
+  pop(): T | undefined { return this.items.pop(); }
 }
-
-var st Stack[int]
-st.Push(1)
+const st = new Stack<number>();
+st.push(1);
+// st.push("a");                    // compile error: Argument of type 'string' is not assignable to parameter of type 'number'
 ```
 
-`comparable` is the built-in constraint for types that support `==`, which is what a generic map key needs (`func Keys[K comparable, V any](m map[K]V) []K`). Reach for generics when you write the same logic for several types; for a single type or a behavior difference, a plain function or an interface is simpler.
+```ts
+// Generic helpers the standard library does not provide as one-liners
+function mapValues<T, U>(items: T[], f: (item: T) => U): U[] {
+  return items.map(f);
+}
+
+function groupBy<T, K extends string | number>(items: T[], keyOf: (item: T) => K): Record<K, T[]> {
+  const out = {} as Record<K, T[]>;
+  for (const item of items) {
+    (out[keyOf(item)] ??= []).push(item);
+  }
+  return out;
+}
+groupBy(["apple", "avocado", "banana"], (s) => s[0]);   // { a: ["apple", "avocado"], b: ["banana"] }
+
+// keyof and indexed access: type-safe property access
+function getProp<T, K extends keyof T>(obj: T, key: K): T[K] {
+  return obj[key];
+}
+getProp({ name: "Alice", age: 30 }, "age");             // number
+// getProp({ name: "Alice" }, "email");                 // compile error: '"email"' is not assignable to '"name"'
+
+// Optional and union types (Python: Optional[str], Union[int, str])
+function findUser(id: number): string | undefined {
+  return id === 1 ? "Alice" : undefined;
+}
+function process(value: number | string): string {
+  return String(value);
+}
+```
+
+```ts
+// Built-in utility types that transform other types
+interface User { id: number; name: string; email?: string }
+
+type Draft = Partial<User>;                 // every property optional
+type Complete = Required<User>;             // every property required
+type Preview = Pick<User, "id" | "name">;   // only these properties
+type NoEmail = Omit<User, "email">;         // all except these
+type Frozen = Readonly<User>;               // read-only properties
+type Lookup = Record<string, User>;         // string keys, User values
+type Result = ReturnType<typeof findUser>;  // string | undefined
+type Resolved = Awaited<Promise<number>>;   // number
+```
+
+Key rule: generics document and enforce what type goes in and what comes out without hardcoding one type, and they disappear at run time like all types. Reach for generics when you write the same logic for several types; for a single type or a behavior difference, a plain function or an interface is simpler.
 
 ---
 
@@ -5406,7 +6470,18 @@ breakpoint()                    # drops into the pdb debugger at this line
 pdb commands:  n (next line)  s (step into)  c (continue)  p expr (print)  l (list code)  q (quit)
 ```
 
-IDEs (VS Code, PyCharm, GoLand) provide the same with breakpoints you click. For Go use the Delve debugger (`dlv debug`, `dlv test`), which VS Code and GoLand use behind the scenes.
+```ts
+console.log({ value });         // prints the name and the value: { value: 42 }
+console.table([{ a: 1 }, { a: 2 }]);
+debugger;                       // pauses here when a debugger is attached
+```
+
+```bash
+node --inspect-brk dist/app.js  # start paused and wait for a debugger (open chrome://inspect or attach VS Code)
+node --enable-source-maps dist/app.js   # stack traces point at the .ts lines
+```
+
+IDEs (VS Code, PyCharm, WebStorm) provide the same with breakpoints you click. For TypeScript, make sure `"sourceMap": true` is set in `tsconfig.json` so the debugger can show your `.ts` source while running the compiled `.js`; VS Code's "JavaScript Debug Terminal" attaches to anything you start inside it.
 
 ## Logging
 
@@ -5428,14 +6503,21 @@ log.error("payment failed for order %s", 123)
 log.exception("unexpected failure")        # inside except: also logs the traceback
 ```
 
-```go
-import "log/slog"
+```ts
+// The built-in console has levels but no filtering, timestamps, or structure
+console.debug("noisy detail");
+console.info("server started on port", 8080);
+console.warn("disk almost full");
+console.error("payment failed for order", 123, error);   // goes to stderr, prints the stack for Error objects
 
-slog.Info("server started", "port", 8080)
-slog.Warn("disk almost full", "free_mb", 120)
-slog.Error("payment failed", "order", 123, "err", err)
-// JSON output for log collectors:
-logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+// A logging library gives levels, timestamps, and JSON output for log collectors (pino shown)
+import pino from "pino";
+
+const logger = pino({ level: "info" });           // debug lines are hidden at this level
+logger.info({ port: 8080 }, "server started");
+logger.warn({ freeMb: 120 }, "disk almost full");
+logger.error({ err, order: 123 }, "payment failed");
+const child = logger.child({ module: "billing" });    // adds fields to every line
 ```
 
 Levels, from least to most severe: DEBUG, INFO, WARNING, ERROR, CRITICAL. Never log passwords, tokens, or personal data.
@@ -5474,63 +6556,69 @@ pytest -k divide                # only tests whose name matches
 pytest --cov=myapp              # coverage report (pytest-cov plugin)
 ```
 
-## Testing in Go
+## Testing in TypeScript
 
-Testing is built into the `go` tool. Test files end in `_test.go`, test functions are named `TestXxx` and take a `*testing.T`.
+TypeScript needs a test runner. Vitest and Jest are the most common (`npm install -D vitest`); Node.js also has a built-in runner (`node:test`). Test files end in `.test.ts` or `.spec.ts` and are discovered automatically.
 
-```go
-// file: mathutils_test.go
-package mathutils
-
-import "testing"
-
-func TestDivide(t *testing.T) {
-    got, err := Divide(10, 2)
-    if err != nil {
-        t.Fatalf("unexpected error: %v", err)
-    }
-    if got != 5 {
-        t.Errorf("Divide(10, 2) = %v, want 5", got)
-    }
+```ts
+// file: src/mathutils.ts
+export function divide(a: number, b: number): number {
+  if (b === 0) {
+    throw new RangeError("division by zero");
+  }
+  return a / b;
 }
 
-// Table-driven test: the idiomatic Go style
-func TestDivideTable(t *testing.T) {
-    tests := []struct {
-        name    string
-        a, b    float64
-        want    float64
-        wantErr bool
-    }{
-        {"simple", 6, 3, 2, false},
-        {"zero divisor", 1, 0, 0, true},
-    }
-    for _, tc := range tests {
-        t.Run(tc.name, func(t *testing.T) {
-            got, err := Divide(tc.a, tc.b)
-            if (err != nil) != tc.wantErr {
-                t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
-            }
-            if got != tc.want {
-                t.Errorf("got %v, want %v", got, tc.want)
-            }
-        })
-    }
-}
+// file: src/mathutils.test.ts
+import { describe, it, expect } from "vitest";
+import { divide } from "./mathutils.js";
 
-func BenchmarkDivide(b *testing.B) {         // benchmarks: go test -bench .
-    for i := 0; i < b.N; i++ {
-        Divide(10, 2)
-    }
-}
+describe("divide", () => {
+  it("divides two numbers", () => {
+    expect(divide(10, 2)).toBe(5);
+  });
+
+  it("throws on zero", () => {
+    expect(() => divide(1, 0)).toThrow(RangeError);
+  });
+
+  // Table-driven test (Python: parametrize)
+  it.each([
+    [6, 3, 2],
+    [9, 3, 3],
+    [0, 5, 0],
+  ])("divide(%i, %i) = %i", (a, b, expected) => {
+    expect(divide(a, b)).toBe(expected);
+  });
+});
+
+// Async code: return or await the promise
+it("loads a user", async () => {
+  await expect(getUser("octocat")).resolves.toMatchObject({ login: "octocat" });
+});
+```
+
+```ts
+// Replacing a dependency with a fake (mocking)
+import { vi } from "vitest";
+const send = vi.fn().mockResolvedValue(true);
+await notify({ send }, "hello");
+expect(send).toHaveBeenCalledWith("hello");
+
+// The built-in runner needs no packages
+import test from "node:test";
+import assert from "node:assert/strict";
+test("divide", () => {
+  assert.equal(divide(10, 2), 5);
+});
 ```
 
 ```bash
-go test ./...                   # all packages in the module
-go test -v -run TestDivide      # verbose, only matching tests
-go test -race ./...             # with the data race detector
-go test -cover ./...            # coverage
-go test -bench . -benchmem      # benchmarks with memory stats
+npx vitest                      # watch mode: reruns on every save
+npx vitest run                  # run everything once (what CI uses)
+npx vitest run -t divide        # only tests whose name matches
+npx vitest run --coverage       # coverage report (needs @vitest/coverage-v8)
+node --test                     # the built-in runner
 ```
 
 ## Formatting, Linting and Type Checking
@@ -5538,8 +6626,9 @@ go test -bench . -benchmem      # benchmarks with memory stats
 * Python formatting: `black` or `ruff format`; style guide: PEP 8
 * Python linting: `ruff` (fast, replaces flake8 and more) or `pylint`
 * Python type checking: `mypy` or `pyright`
-* Go formatting: `gofmt` / `go fmt ./...`; there is one standard style and every Go project uses it, so formatting is never debated
-* Go checks: `go vet ./...` (suspicious code), `staticcheck` or `golangci-lint` (many linters in one)
+* TypeScript formatting: `prettier` (or Biome): it rewrites the file to one consistent style, so formatting is never debated
+* TypeScript linting: `eslint` with `typescript-eslint` (finds bugs such as floating promises, unused variables, and unsafe `any`), or Biome
+* TypeScript type checking: `tsc --noEmit` (part of the compiler; run it in CI, because dev servers and bundlers often skip it)
 
 ```bash
 # Python
@@ -5547,30 +6636,34 @@ ruff format .
 ruff check .
 mypy src/
 
-# Go
-go fmt ./...
-go vet ./...
-golangci-lint run
+# TypeScript
+npx prettier --write .
+npx eslint .
+npx tsc --noEmit
 ```
 
 Run formatting, linting, type checks, and tests automatically in CI (and optionally in a pre-commit hook) so problems never reach the main branch.
 
-## Everyday Go Commands
+## Everyday TypeScript Commands
 
 ```bash
-go run .                 # compile and run the main package
-go build ./...           # compile everything (checks that it builds), no output file for libraries
-go build -o app .        # produce a named executable
-go test ./...            # run all tests
-go test -race ./...      # tests with race detection
-go fmt ./...             # format
-go vet ./...             # static checks
-go mod tidy              # sync go.mod/go.sum with the imports in your code
-go get pkg@version       # add or change a dependency
-go install pkg@latest    # install a Go tool into $GOPATH/bin
-go doc strings.Split     # documentation in the terminal
-go env                   # show the Go environment settings
-go version
+npx tsc                  # type-check and compile to the outDir
+npx tsc --noEmit         # only type-check (what CI runs)
+npx tsc --watch          # recompile on save
+npx tsx src/app.ts       # run a .ts file directly (no type-check)
+node dist/app.js         # run the compiled output
+npm install              # install dependencies from package.json and the lock file
+npm ci                   # exact install from the lock file (CI, Docker)
+npm install -D pkg       # add a dev dependency
+npm run build            # run a script from package.json
+npm test                 # run the "test" script
+npx vitest run           # run the tests once
+npx eslint .             # lint
+npx prettier --write .   # format
+npm outdated             # which dependencies have newer versions
+npm audit                # known vulnerabilities in dependencies
+node --version           # the runtime version
+npx tsc --version        # the compiler version
 ```
 
 ## Measuring Performance
@@ -5583,12 +6676,24 @@ import cProfile
 cProfile.run("main()")                                  # which functions take the time
 ```
 
-```bash
-python -m cProfile -s cumtime app.py                    # sort by cumulative time
-go test -bench . -cpuprofile cpu.out && go tool pprof cpu.out
+```ts
+console.time("sum");                                    // time a snippet
+let total = 0;
+for (let i = 0; i < 1000; i++) total += i;
+console.timeEnd("sum");                                 // sum: 0.03ms
+
+const start = performance.now();                        // high-resolution timer in milliseconds
+work();
+console.log(`took ${(performance.now() - start).toFixed(2)} ms`);
 ```
 
-Measure first, then optimize the part that is actually slow; guessing is usually wrong.
+```bash
+python -m cProfile -s cumtime app.py                    # sort by cumulative time
+node --cpu-prof dist/app.js                             # writes a .cpuprofile: open it in Chrome DevTools or VS Code
+node --inspect dist/app.js                              # attach DevTools: Performance and Memory tabs
+```
+
+Benchmarks of tiny snippets are easy to get wrong (the JIT compiler warms up and optimizes away unused work), so use a library such as `tinybench` or `mitata` for micro-benchmarks. Measure first, then optimize the part that is actually slow; guessing is usually wrong.
 
 ---
 
@@ -7867,27 +8972,32 @@ Immutable  : int, float, str, tuple, frozenset
 
 ---
 
-# Python vs Go at a Glance
+# Python vs TypeScript at a Glance
 
 ```text
-                    Python                          Go
-Typing              dynamic, strong                 static, strong, inferred
-Runs as             bytecode on the Python VM       native executable
-Entry point         if __name__ == "__main__"       package main + func main()
-Null value          None                            nil (pointers, slices, maps, interfaces...)
-Unset variable      NameError                       zero value (0, "", false, nil)
-Collections         list, tuple, dict, set          array, slice, map (set = map[T]struct{})
-Strings             Unicode text, immutable         UTF-8 bytes, immutable, rune = character
-Errors              exceptions: try/except/finally  error values: if err != nil, defer, panic/recover
-Cleanup             with statement                  defer
-Memory              reference counting + cyclic GC  concurrent tracing GC, pointers (no arithmetic)
-Objects             classes, inheritance            structs, methods, interfaces, embedding
-Interfaces          duck typing (runtime)           implicit, checked at compile time
-Concurrency         threads (GIL), processes,       goroutines, channels, mutexes, context
-                    asyncio
-Parallel CPU work   multiprocessing                 goroutines on all cores
-Dependencies        pip + venv + requirements /     go.mod + go.sum (minimal version selection)
+                    Python                          TypeScript
+Typing              dynamic, strong                 static (compile time), structural, types erased at run time
+Runs as             bytecode on the Python VM       JavaScript on V8 (Node.js, Deno, Bun, browsers)
+Build step          none (compiles on import)       tsc / esbuild turns .ts into .js
+Entry point         if __name__ == "__main__"       the file runs top to bottom (package.json "main" / scripts)
+Null value          None                            undefined and null
+Unset variable      NameError                       undefined (strict mode forces assignment before use)
+Collections         list, tuple, dict, set          Array, tuple type, Object / Map, Set
+Strings             Unicode text, immutable         UTF-16 code units, immutable, no char type
+Numbers             int (unlimited), float          number (64-bit float), bigint
+Equality            == value, is identity           === (objects by reference), no built-in deep compare
+Errors              exceptions: try/except/finally  exceptions: try/catch/finally, throw, Promise rejections
+Cleanup             with statement                  try/finally, using
+Memory              reference counting + cyclic GC  generational tracing GC (V8), no pointers
+Objects             classes, multiple inheritance   classes (single inheritance), interfaces, mixins
+Interfaces          duck typing (runtime)           structural typing (compile time)
+Concurrency         threads (GIL), processes,       one thread + event loop, async/await,
+                    asyncio                         worker threads
+Parallel CPU work   multiprocessing                 worker_threads, child processes
+Cancellation        task.cancel(), Event            AbortController / AbortSignal
+Dependencies        pip + venv + requirements /     npm + node_modules + package.json / package-lock.json
                     pyproject.toml
-Tests               pytest / unittest               go test (built in)
-Format              black / ruff format             gofmt (one standard style)
+Tests               pytest / unittest               vitest / jest / node:test
+Format              black / ruff format             prettier
+Lint / type check   ruff, mypy / pyright            eslint, tsc --noEmit
 ```
