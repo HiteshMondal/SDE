@@ -13,20 +13,28 @@ A comprehensive guide to Linux commands and shell scripting: concepts, commands,
 7. [Networking](#networking)
 8. [Archives & Compression](#archives--compression)
 9. [Package Management](#package-management)
-10. [System Monitoring & Resources](#system-monitoring--resources)
-11. [Process Management](#process-management)
-12. [Scheduling (cron & at)](#scheduling-cron--at)
-13. [Logs](#logs)
-14. [Links (Soft vs Hard)](#links-soft-vs-hard)
-15. [SELinux](#selinux)
-16. [Encoding & Misc Utilities](#encoding--misc-utilities)
-17. [Shell Scripting Basics](#shell-scripting-basics)
-18. [Advanced Shell Scripting](#advanced-shell-scripting)
-19. [I/O Redirection & Pipelines](#io-redirection--pipelines)
-20. [Linux Directory Structure](#linux-directory-structure)
-21. [Linux Boot Process](#linux-boot-process)
-22. [Practical Shell Script Examples](#practical-shell-script-examples)
-23. [Quick Reference Cheatsheet](#quick-reference-cheatsheet)
+10. [Disk Partitioning & Mounting](#disk-partitioning--mounting)
+11. [Storage, Filesystems & LVM](#storage-filesystems--lvm)
+12. [System Monitoring & Resources](#system-monitoring--resources)
+13. [Kernel, Memory & Performance Troubleshooting](#kernel-memory--performance-troubleshooting)
+14. [Process Management](#process-management)
+15. [Scheduling (cron & at)](#scheduling-cron--at)
+16. [Logs](#logs)
+17. [Links (Soft vs Hard)](#links-soft-vs-hard)
+18. [SELinux](#selinux)
+19. [Linux Security Hardening Baseline](#linux-security-hardening-baseline)
+20. [Encoding & Misc Utilities](#encoding--misc-utilities)
+21. [Hashing](#hashing)
+22. [Sending Email from the Linux Terminal](#sending-email-from-the-linux-terminal)
+23. [Shell Scripting Basics](#shell-scripting-basics)
+24. [Advanced Shell Scripting](#advanced-shell-scripting)
+25. [I/O Redirection & Pipelines](#io-redirection--pipelines)
+26. [Linux Directory Structure](#linux-directory-structure)
+27. [Linux Boot Process](#linux-boot-process)
+28. [systemd Deep Dive](#systemd-deep-dive)
+29. [Practical Shell Script Examples](#practical-shell-script-examples)
+30. [Quick Reference Cheatsheet](#quick-reference-cheatsheet)
+31. [Scenario-based troubleshooting questions](#scenario-based-troubleshooting-questions)
 
 ---
 
@@ -85,6 +93,52 @@ NAME="Hi"; name="Bye"      # two different variables
 - **exec()**: replaces the current process with another program.
 - **Process states**: Running, Sleeping, Zombie (finished but not reaped by parent), Orphan (parent died first).
 
+### File Descriptors (FDs) and `/proc/<PID>`
+
+A **file descriptor** is a small integer a process uses to refer to an open file, socket, pipe, or device. Every process starts with `0` (stdin), `1` (stdout), `2` (stderr). This is the mechanism behind "everything is a file" and behind redirection (`2>&1` means "make fd 2 point where fd 1 points").
+
+```bash
+ls -l /proc/$$/fd                     # fds of your current shell
+ls /proc/PID/fd | wc -l               # how many fds a process holds open
+lsof -p PID                           # same, human-readable (files, sockets, pipes)
+grep -i "open files" /proc/PID/limits # that process's soft/hard limit
+ulimit -n                             # soft limit for the current shell
+cat /proc/sys/fs/file-nr              # system-wide: allocated  unused  max
+```
+
+**"Too many open files"**: a process hit its fd limit, or has a leak (connections never closed).
+```bash
+ls -l /proc/PID/fd | awk '{print $NF}' | sed 's/[0-9]*$//' | sort | uniq -c | sort -rn | head   # what kind of fds?
+# Fix for a systemd service (the shell's ulimit does NOT apply to services):
+#   [Service]
+#   LimitNOFILE=65535
+# Fix for login sessions: /etc/security/limits.conf  ->  appuser  soft/hard  nofile  65535
+```
+
+**Custom fds in scripts**
+```bash
+exec 3> out.log        # open fd 3 for writing
+echo "hello" >&3
+exec 3>&-              # close it
+```
+
+**Deleted-but-still-open files** (the classic "disk is full but `du` shows nothing"): the space is not freed until every process closes the file.
+```bash
+lsof +L1                              # open files with link count 0 (deleted)
+: > /proc/PID/fd/N                    # truncate it in place to free space without restarting
+```
+
+**Useful `/proc/<PID>/` entries**
+
+| Path | Shows |
+|---|---|
+| `cmdline` | Exact command line (NUL-separated): `tr '\0' ' ' < /proc/PID/cmdline` |
+| `environ` | Environment the process started with (**secrets leak here**) |
+| `status` | State, memory (`VmRSS`), threads, UID/GID |
+| `limits` | Resource limits actually in force |
+| `cwd`, `exe` | Symlinks to working directory and the binary |
+| `fd/`, `net/`, `maps` | Open files, per-process network tables, memory mappings |
+
 ### What Is a Daemon?
 A **daemon** is a background process with no controlling terminal, usually started at boot and running for the system's lifetime (e.g. `sshd`, `crond`, `systemd`). By convention many daemon names end in `d`. You interact with most daemons via `systemctl` rather than by talking to them directly.
 
@@ -122,9 +176,76 @@ When physical RAM fills up, the kernel moves inactive memory pages to disk (swap
 - A **VM** virtualizes entire hardware + OS via a hypervisor
 - A **container** (Docker, etc.) shares the host kernel but isolates processes using namespaces and cgroups
 
+### What a Container Really Is: Namespaces + cgroups
+
+A container is an ordinary Linux process with **isolated views** (namespaces) and **resource limits** (cgroups). There is no "container" object in the kernel.
+
+| Namespace | Isolates |
+|---|---|
+| `pid` | Process IDs (container's main process is PID 1) |
+| `net` | Interfaces, routes, ports, iptables |
+| `mnt` | Mount points / filesystem view |
+| `uts` | Hostname |
+| `ipc` | Shared memory, semaphores |
+| `user` | UID/GID mapping (root in container ≠ root on host) |
+| `cgroup` | View of the cgroup tree |
+
+```bash
+lsns                                          # list namespaces on the host
+sudo unshare --pid --fork --mount-proc bash   # new PID namespace: ps shows only your shell
+sudo nsenter -t <PID> -n ip addr              # run a host tool inside a container's network namespace
+sudo nsenter -t <PID> -m -u -i -n -p bash     # "exec" into a container without docker/kubectl
+sudo ip netns list                            # named network namespaces
+```
+
+**cgroups (v2)** enforce limits and accounting:
+```bash
+stat -fc %T /sys/fs/cgroup        # "cgroup2fs" = v2
+cat /sys/fs/cgroup/<path>/memory.max       # memory limit (bytes, or "max")
+cat /sys/fs/cgroup/<path>/memory.current   # current usage
+cat /sys/fs/cgroup/<path>/cpu.max          # "50000 100000" = 50% of one CPU
+cat /sys/fs/cgroup/<path>/cpu.stat         # nr_throttled > 0 means the limit is slowing you down
+systemd-cgls ; systemd-cgtop               # cgroup tree / live usage per service
+systemd-run --scope -p MemoryMax=200M -p CPUQuota=50% ./myjob   # limit any command
+```
+
+**Why this matters in production**
+- Memory limit exceeded → kernel OOM-kills the process → exit code **137** (128 + SIGKILL 9) → Kubernetes shows `OOMKilled`.
+- CPU limit exceeded → the process is **throttled** (slow), not killed. High latency with low CPU graphs usually means throttling.
+- Container PID 1 does not get default signal handling and does not reap zombies. Use `docker run --init` or `tini`, and make the app handle `SIGTERM`.
+- Other building blocks: `chroot` (change root dir), **overlayfs** (layered image filesystem), **capabilities** (split root into ~40 privileges), **seccomp** (syscall filter).
+
 ### POSIX Compliance
 POSIX (Portable Operating System Interface) is a set of IEEE standards specifying how Unix-like operating systems should behave (commands, APIs, shell behavior, utilities). The goal is portability — a script written for one POSIX-compliant system should run on another with little or no modification.
 
+### Linux Distribution Families
+
+| Family | Examples | Packages | Typical use |
+|---|---|---|---|
+| Debian | Debian, Ubuntu, Mint | `.deb` / `apt`, `dpkg` | Servers, cloud images, dev machines |
+| Red Hat | RHEL, Rocky, AlmaLinux, CentOS Stream, Fedora, Amazon Linux | `.rpm` / `dnf`, `rpm` | Enterprise servers, SELinux by default |
+| SUSE | SLES, openSUSE | `.rpm` / `zypper` | Enterprise, SAP |
+| Alpine | Alpine | `.apk` / `apk` | Tiny container base images (~5 MB) |
+
+**Same task, different family — memorize this table, it saves hours on unfamiliar servers:**
+
+| Task | Debian / Ubuntu | RHEL / Fedora / Amazon Linux | Alpine |
+|---|---|---|---|
+| Install a package | `apt install` | `dnf install` | `apk add --no-cache` |
+| Default firewall front-end | `ufw` | `firewalld` (`firewall-cmd`) | `iptables` / `nftables` |
+| Mandatory access control | AppArmor | SELinux | none by default |
+| Network config | netplan / NetworkManager | NetworkManager (`nmcli`) | `/etc/network/interfaces` |
+| SSH service name | `ssh` | `sshd` | `sshd` |
+| Auth log | `/var/log/auth.log` | `/var/log/secure` | `/var/log/messages` |
+| `/bin/sh` is | `dash` | `bash` | BusyBox `ash` |
+| Default cloud login user | `ubuntu` | `ec2-user` / `azureuser` | `alpine` |
+
+**Alpine gotchas (you will meet these in Docker):**
+- Uses **musl libc** instead of glibc, and **BusyBox** instead of GNU coreutils, so some flags differ (`date -d`, `sed -i`, `grep -P` may be missing).
+- A glibc-compiled binary may fail with `not found` even though the file exists. The missing piece is the dynamic loader. Use a glibc image (`debian-slim`) or build against musl.
+- Scripts need `#!/bin/sh` (or `apk add bash`). Bashisms break.
+
+> Release models: **LTS** (Ubuntu LTS every 2 years, 5 years of standard support) for servers; **rolling** (Arch) for desktops; **stream/point** releases (RHEL-family) for enterprise. Pick the distro your cloud provider's images and your team's runbooks already support.
 ---
 
 ## Shell & Terminal Basics
@@ -1215,6 +1336,41 @@ chmod 2775 /shared/folder      # SGID + rwxrwxr-x
 chmod 1777 /tmp                # Sticky + rwxrwxrwx
 ```
 
+### ACLs — Permissions Beyond owner/group/others
+
+Use when one extra person or group needs access without changing ownership.
+```bash
+getfacl report.txt
+setfacl -m u:alice:rw report.txt          # give alice read+write
+setfacl -m g:devs:rx /srv/app             # give group devs read+execute
+setfacl -R -m u:alice:rwx /srv/app        # recursive
+setfacl -d -m g:devs:rwx /srv/shared      # DEFAULT ACL: new files inside inherit it
+setfacl -x u:alice report.txt             # remove one entry ; setfacl -b file  removes all
+ls -l report.txt                          # a trailing "+" in the mode (-rw-rw-r--+) means an ACL exists
+```
+> The ACL **mask** caps the effective permissions of named users/groups. If `getfacl` shows `#effective:r--`, `chmod g-w` (which edits the mask) is the culprit.
+
+### File Attributes — Even root Can Be Blocked
+
+```bash
+sudo chattr +i /etc/resolv.conf     # immutable: cannot modify, delete, rename, or link (even by root)
+sudo chattr +a /var/log/app.log     # append-only (log tamper resistance)
+lsattr /etc/resolv.conf             # view attributes
+sudo chattr -i /etc/resolv.conf     # remove
+```
+> "Permission denied as root" with correct modes usually means: immutable attribute (`lsattr`), read-only mount (`findmnt`), SELinux/AppArmor denial, or a full filesystem.
+
+### Capabilities — Least Privilege Instead of SUID/root
+
+Capabilities split root's power into pieces (`CAP_NET_BIND_SERVICE`, `CAP_SYS_TIME`, `CAP_NET_ADMIN`...).
+```bash
+sudo setcap 'cap_net_bind_service=+ep' /usr/local/bin/myapp   # bind ports <1024 without running as root
+getcap /usr/local/bin/myapp
+getcap -r / 2>/dev/null                                        # audit: what has capabilities?
+grep Cap /proc/PID/status ; capsh --decode=<hex>               # what does a running process hold?
+```
+Docker/Kubernetes use the same model: `--cap-drop ALL --cap-add NET_BIND_SERVICE`, or `securityContext.capabilities`.
+
 ---
 
 ## Users, Groups & Access
@@ -1416,24 +1572,110 @@ usermod -aG wheel hitesh      # RHEL/CentOS: add user to wheel group
 sudo -l          # List what the current user can run with sudo
 ```
 
-### SSH
+### sudoers — Controlling Who Can Run What
+
+**Always edit with `visudo`** — it syntax-checks. A broken `/etc/sudoers` can lock everyone out of sudo.
+```bash
+sudo visudo                         # edit main file
+sudo visudo -f /etc/sudoers.d/devops   # preferred: one drop-in per purpose (file mode must be 0440)
+sudo visudo -c                      # check syntax of all sudoers files
+```
+```text
+# user   hosts=(run-as-user:group)  commands
+hitesh   ALL=(ALL:ALL) ALL
+%devops  ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx, /usr/bin/systemctl status nginx
+deploy   ALL=(root) NOPASSWD: /usr/local/bin/deploy.sh
+Defaults use_pty
+Defaults logfile="/var/log/sudo.log"
+```
+> `NOPASSWD: ALL` on a human account defeats the point of sudo. For automation, grant specific absolute-path commands. Never allow commands that give shells (`vi`, `less`, `find`, `python`) without `NOEXEC` — they escape to root.
+
+### PAM — Pluggable Authentication Modules (what sits behind login, sudo, sshd)
+
+- Configs live in `/etc/pam.d/` (one file per service: `sshd`, `sudo`, `login`).
+- Common modules: `pam_unix` (passwords), `pam_faillock` (lockout after failures), `pam_pwquality` (password strength), `pam_limits` (applies `limits.conf`), `pam_google_authenticator` (TOTP MFA).
+```bash
+faillock --user bob            # show failed attempts
+faillock --user bob --reset    # unlock the account
+```
+> Edit PAM carefully and keep a root shell open: a bad PAM change can lock you out of every login path.
+
+### SSH — Keys, Config, Tunnels, Hardening
 
 ```bash
-ssh -p port_number username@hostname
-ssh -p port_number username@hostname cat readme
-
-# Generate Key
-ssh-keygen
-
-# Connect using ssh key
-vi sshkey.private
------BEGIN OPENSSH PRIVATE KEY-----
-#SDALSNDLKASNDANSLJND...
------END OPENSSH PRIVATE KEY-----
-
-chmod 600 sshkey.private
-ssh -i sshkey.private -p port_number username@hostname
+ssh-keygen -t ed25519 -C "hitesh@laptop"        # modern default key (RSA: -t rsa -b 4096)
+ssh-copy-id -i ~/.ssh/id_ed25519.pub user@host  # appends your public key to the server's authorized_keys
+ssh -p 2222 -i ~/.ssh/prod_ed25519 user@host
+ssh user@host 'df -h && uptime'                 # run a command, no interactive shell
 ```
+
+**Permissions SSH insists on** (wrong modes → silent `Permission denied (publickey)`):
+```bash
+chmod 700 ~/.ssh ; chmod 600 ~/.ssh/authorized_keys ~/.ssh/id_ed25519 ; chmod 644 ~/.ssh/id_ed25519.pub
+# Home directory must not be group/world-writable. On SELinux systems: restorecon -R ~/.ssh
+```
+
+**`~/.ssh/config` — stop typing long commands**
+```text
+Host bastion
+  HostName 203.0.113.10
+  User ec2-user
+  IdentityFile ~/.ssh/prod_ed25519
+  IdentitiesOnly yes
+
+Host 10.20.*
+  ProxyJump bastion            # reach private hosts through the bastion in one hop
+  User ubuntu
+  IdentityFile ~/.ssh/prod_ed25519
+
+Host *
+  ServerAliveInterval 60       # keepalives: stops idle NAT/firewalls dropping the session
+  ServerAliveCountMax 3
+```
+Now `ssh 10.20.100.15` just works, as do `scp` and `rsync -e ssh`.
+
+**Tunnels (port forwarding)**
+```bash
+ssh -L 5433:db.internal:5432 bastion -N     # local: localhost:5433 -> db.internal:5432 via bastion
+psql -h 127.0.0.1 -p 5433 -U app mydb
+ssh -R 9000:localhost:3000 server           # remote: server:9000 -> your localhost:3000
+ssh -D 1080 bastion -N                      # dynamic SOCKS proxy: browser/curl --socks5 localhost:1080
+# -N = no remote command, -f = go to background
+```
+
+**Agent and forwarding**
+```bash
+eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519
+ssh -J bastion target       # preferred: ProxyJump. Your key never lands on the bastion
+ssh -A bastion              # agent forwarding: anyone with root on bastion can use your agent while connected. Avoid.
+```
+
+**Host keys**
+`REMOTE HOST IDENTIFICATION HAS CHANGED` means the server was rebuilt or the IP was reused, **or** someone is intercepting. Verify, then `ssh-keygen -R host`. Don't set `StrictHostKeyChecking no` permanently.
+
+**Server hardening (`/etc/ssh/sshd_config`)**
+```text
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+MaxAuthTries 3
+AllowUsers deploy hitesh          # or AllowGroups ssh-users
+ClientAliveInterval 300
+ClientAliveCountMax 2
+```
+```bash
+sudo sshd -t && sudo systemctl reload ssh   # validate BEFORE reload (service is `sshd` on RHEL). Keep your current session open and test a second one.
+sudo sshd -T | grep -Ei 'passwordauth|permitroot'   # EFFECTIVE config
+```
+> `sshd` uses the **first** value it finds, and `Include /etc/ssh/sshd_config.d/*.conf` is at the top, so a drop-in (e.g. cloud-init's `50-cloud-init.conf` setting `PasswordAuthentication yes`) can silently override your edit. Always verify with `sshd -T`. Changing the port is obscurity, not security.
+
+**`Permission denied (publickey)` checklist**
+1. Client: `ssh -vvv ...` shows which keys are offered and why they fail.
+2. Right username for the image (`ubuntu`, `ec2-user`, `azureuser`, `admin`)?
+3. Server log: `sudo journalctl -u ssh -f` (RHEL: `/var/log/secure`).
+4. Modes on `~/.ssh` and home directory; `authorized_keys` ends with a newline and has one key per line.
+5. `AllowUsers`/`AllowGroups`, `sshd -T`, SELinux context, full disk (sshd cannot write).
+6. Cloud: security group/NSG port 22 and a route to the instance; no access at all? Use SSM Session Manager / serial console.
 
 ---
 
@@ -1564,6 +1806,41 @@ find . -type f -name "*.conf" -print0 | xargs -0 grep -n "listen"   # safe with 
 ```
 
 > Rule of thumb: you know part of the name, size, or date → `find`. You know part of the text → `grep -r`. Both → `find ... -exec grep`. For a fast name-only lookup from an index, use `locate` (refresh with `sudo updatedb`).
+
+### Regular Expressions Reference
+
+Three flavors exist; the tool decides which one you get.
+
+| Tool | Flavor | Notes |
+|---|---|---|
+| `grep`, `sed` | BRE (basic) | `+ ? \| ( ) { }` need a backslash (GNU) |
+| `grep -E`, `sed -E`, `awk`, `egrep` | ERE (extended) | `+ ? \| ( ) { }` work unescaped |
+| `grep -P`, Python, JS, Java | PCRE-like | Adds `\d`, lazy `*?`, lookaheads, `\K` |
+
+| Syntax | Meaning |
+|---|---|
+| `.` | Any one character |
+| `^` / `$` | Start / end of line |
+| `*` `+` `?` | 0 or more / 1 or more / 0 or 1 of the previous item |
+| `{n}` `{n,m}` | Exactly n / between n and m |
+| `[abc]` `[^abc]` `[a-z]` | Character set / negated / range |
+| `[[:digit:]]` `[[:alpha:]]` `[[:space:]]` `[[:upper:]]` | POSIX classes (portable everywhere) |
+| `(a\|b)` | Group / alternation (ERE) |
+| `\1` | Back-reference to the first group |
+| `\b` `\<` `\>` | Word boundary |
+| `\d` `\w` `\s` | Digit / word / space (**PCRE only**; GNU BRE has `\w \s` but not `\d`) |
+| `.*?` | Lazy match (**PCRE only**) |
+
+```bash
+grep -E '^(ERROR|WARN)' app.log                        # lines starting with ERROR or WARN
+grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' access.log      # extract IPv4-looking strings (-o = matching part only)
+grep -oP 'id=\K[0-9]+' app.log                         # \K drops what came before: prints only the number
+grep -Ev '^\s*(#|$)' /etc/ssh/sshd_config              # strip comments and blank lines
+grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' app.log         # ISO timestamps at line start
+sed -E 's/([0-9]+)-([0-9]+)/\2-\1/' file               # swap two numbers using groups
+```
+
+> Escape these when you mean them literally: `. * [ ] ^ $ \ ( ) { } + ? |`. In scripts, put regexes in **single quotes** so the shell does not touch them. Globs (`*.txt`) and regexes are different languages.
 
 ### wc — Word Count
 
@@ -1916,6 +2193,52 @@ awk '{print $1}' access.log | sort | uniq      # Find unique IP addresses in a l
 sed -i 's/http:/https:/g' config.conf          # Replace "http" with "https" in a config file
 ```
 
+### jq — JSON on the Command Line (essential for cloud and Kubernetes work)
+
+```bash
+echo '{"name":"app","ports":[80,443],"env":{"tier":"prod"}}' > a.json
+jq . a.json                              # pretty-print
+jq -r '.name' a.json                     # -r = raw string (no quotes)
+jq '.ports[]' a.json                     # iterate an array
+jq '.ports | length' a.json
+jq -c '.' a.json                         # compact one-line output (log pipelines)
+jq --arg t prod '.env.tier == $t' a.json # pass a shell variable in
+jq -e '.name == "app"' a.json            # -e: exit status 1 if false/null (scriptable)
+jq -s 'map(.n) | add' *.json             # -s slurp many inputs into one array
+
+# Real examples
+aws ec2 describe-instances | jq -r '.Reservations[].Instances[] | [.InstanceId, .State.Name, .PrivateIpAddress] | @tsv'
+kubectl get pods -o json | jq -r '.items[] | select(.status.phase!="Running") | .metadata.name'
+curl -s https://api.github.com/repos/jqlang/jq | jq '{stars: .stargazers_count, lang: .language}'
+```
+Use `yq` for the same job on YAML (Kubernetes manifests, Pulumi config).
+
+### More Text Utilities
+
+```bash
+sort -t, -k2,2nr data.csv       # sort CSV by column 2, numeric, descending
+sort -h sizes.txt               # human-numeric: understands 1K < 2M < 3G (use with `du -h`)
+sort -V versions.txt            # version sort: 1.9 < 1.10
+sort -u file | uniq -d          # uniq -d prints only duplicated lines
+
+comm -12 <(sort a) <(sort b)    # lines in BOTH (sorted inputs; -23 = only in a, -13 = only in b)
+join -t, -1 1 -2 1 a.csv b.csv  # SQL-style join on column 1 (both files sorted on it)
+paste -d, names.txt ages.txt    # merge files side by side with a comma
+paste -sd, ids.txt              # join all lines of one file with commas: 1,2,3
+column -t -s, data.csv          # pretty-print as an aligned table
+split -l 10000 big.log part_    # split by lines (-b 100M by size)
+tac file ; nl file ; rev file   # reverse lines / number lines / reverse characters
+fold -w 80 file                 # wrap long lines
+tr -d '\r' < win.txt            # strip Windows CRs (or dos2unix)
+envsubst < tmpl.conf > out.conf # replace ${VAR} placeholders from the environment (config templating)
+
+xxd file | head                 # hex dump (xxd -r reverses). Also: od -c, hexdump -C
+seq 1 5 ; seq -s, 1 5           # number sequences
+shuf -n 3 file                  # random lines
+timeout 10s ./slow-cmd          # kill after 10 s (exit 124 on timeout)
+/usr/bin/time -v ./cmd          # runtime + peak memory (Maximum resident set size) + page faults
+```
+
 ---
 
 ## Networking
@@ -2223,6 +2546,96 @@ ip addr   -> modern replacement (iproute2 package), preferred on current distros
 ifconfig eth0            # old way to view interface info
 ip addr show eth0        # modern equivalent
 ```
+
+### Network Configuration That Survives a Reboot
+
+```bash
+# Temporary (lost on reboot): good for testing
+ip addr add 192.168.1.50/24 dev eth0
+ip route add 10.0.0.0/8 via 192.168.1.254
+ip route get 8.8.8.8            # which route/interface/source IP would be used? (best routing debug command)
+ip link set eth0 up
+```
+```yaml
+# Ubuntu: /etc/netplan/01-static.yaml  (chmod 600)
+network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: false
+      addresses: [192.168.1.50/24]
+      routes:
+        - to: default
+          via: 192.168.1.1
+      nameservers:
+        addresses: [1.1.1.1, 8.8.8.8]
+```
+```bash
+sudo netplan try      # applies, auto-rolls back in 120 s if you lose connectivity (use this over SSH!)
+sudo netplan apply
+# RHEL family (NetworkManager)
+nmcli con show
+nmcli con mod eth0 ipv4.method manual ipv4.addresses 192.168.1.50/24 ipv4.gateway 192.168.1.1 ipv4.dns 1.1.1.1
+nmcli con up eth0
+```
+
+### DNS: What Your Apps See vs What `dig` Sees
+
+```bash
+getent hosts example.com     # uses nsswitch.conf order (files -> dns): what applications actually get
+dig example.com              # talks to DNS directly, ignores /etc/hosts and nsswitch
+resolvectl status            # per-interface DNS servers (systemd-resolved)
+resolvectl query example.com
+ls -l /etc/resolv.conf       # often a symlink to the 127.0.0.53 stub resolver
+```
+> If `dig` works but the app fails (or the reverse), the difference is `/etc/hosts`, `nsswitch.conf`, search domains, or a local resolver. In Kubernetes, `ndots:5` in `resolv.conf` makes short names trigger several lookups before the real one.
+
+### curl for Debugging
+
+```bash
+curl -sS -o /dev/null -w 'dns=%{time_namelookup} connect=%{time_connect} tls=%{time_appconnect} ttfb=%{time_starttransfer} total=%{time_total} code=%{http_code}\n' https://example.com
+curl --resolve example.com:443:203.0.113.10 https://example.com   # test a new server before changing DNS
+curl -H 'Host: devops-app.local' http://10.0.0.5/                 # hit an ingress/vhost by IP
+curl -X POST -H 'Content-Type: application/json' -d @body.json https://api.example.com/items
+curl -H "Authorization: Bearer $TOKEN" https://api.example.com/me
+curl --connect-timeout 3 --max-time 10 --retry 3 -fsSL https://example.com/install.sh
+curl -k https://self-signed.local    # skip TLS verification: diagnosis only, never in scripts
+```
+
+### Packet Capture, Path, and Socket Triage
+
+```bash
+sudo tcpdump -i any -nn -c 50 'tcp port 443 and host 10.0.0.5'   # -nn: no DNS/port name lookups
+sudo tcpdump -i any -nn port 53                                  # is DNS leaving the box?
+sudo tcpdump -i eth0 -w cap.pcap                                 # save for Wireshark
+mtr -rwc 20 example.com                                          # traceroute + ping stats per hop
+ss -ltnp 'sport = :8080'                                         # who listens on 8080
+ss -tn state established '( dport = :5432 )'                     # live connections to Postgres
+ss -tan | awk 'NR>1{print $1}' | sort | uniq -c                  # count of sockets by TCP state
+```
+
+### Layer-by-Layer Troubleshooting Ladder
+
+| Step | Question | Command |
+|---|---|---|
+| 1 | Is the link up? | `ip -br link` |
+| 2 | Do I have an IP? | `ip -br addr` |
+| 3 | Where does traffic go? | `ip route get <dst>` |
+| 4 | Is the host reachable? | `ping`, `mtr` |
+| 5 | Does the name resolve (as apps see it)? | `getent hosts <name>` |
+| 6 | Is the port reachable? | `nc -zv host port` |
+| 7 | Does the app answer? | `curl -v` |
+| Server side | Listening on the right interface? | `ss -ltnp` — `127.0.0.1:8080` is **not** reachable from outside, `0.0.0.0:8080` is |
+
+### Forwarding, NAT, and Port Exhaustion
+
+```bash
+sudo sysctl -w net.ipv4.ip_forward=1
+sudo iptables -t nat -A POSTROUTING -s 10.0.1.0/24 -o eth0 -j MASQUERADE   # what a NAT instance / cloud NAT gateway does
+nft list ruleset                       # nftables is the modern backend; `iptables` is often a shim over it
+sysctl net.ipv4.ip_local_port_range   # ephemeral ports (default 32768-60999)
+```
+> `Cannot assign requested address` on outbound connections = ephemeral-port exhaustion (many short connections to one destination, often behind NAT). Check `ss -s` for TIME_WAIT counts, reuse connections (keep-alive/pooling) before touching kernel tunables.
 
 ### File Transfer (`scp` / `rsync`)
 
@@ -2932,6 +3345,130 @@ UUID=xxxx-xxxx  none            swap       sw              0       0
 
 ---
 
+## Storage, Filesystems & LVM
+
+### Filesystem Types
+
+| FS | Notes |
+|---|---|
+| **ext4** | Default on Debian/Ubuntu. Journaled, mature, can **grow and shrink** |
+| **XFS** | Default on RHEL/Amazon Linux. Great with big files/parallel I/O. Can **grow, not shrink** |
+| **Btrfs / ZFS** | Snapshots, checksums, compression, built-in volume management |
+| **tmpfs** | RAM-backed (`/dev/shm`, `/run`). Gone at reboot, counts toward memory |
+| **overlayfs** | Layered union filesystem; what container images use |
+| **NFS** | Network file system (what AWS EFS speaks) |
+| **vfat / exFAT / NTFS** | Removable media, Windows interop |
+
+A **journal** records intended metadata changes first, so after a crash the filesystem replays it instead of doing a full `fsck`.
+
+### Mount by UUID, Safely
+
+```bash
+blkid                         # UUIDs and types
+lsblk -f                      # devices, filesystems, UUIDs, mountpoints
+findmnt                       # tree of mounts ; findmnt /data  shows source, options
+sudo findmnt --verify         # lint /etc/fstab before you reboot
+```
+```text
+# /etc/fstab — device names (/dev/sdb) can change between boots; UUIDs do not
+UUID=3f1c...-9a  /data  xfs  defaults,noatime,nofail  0  2
+```
+- `nofail`: boot continues if this disk is missing (**without it a bad entry drops you into emergency mode**).
+- `_netdev`: wait for the network (NFS, iSCSI). `noatime`: skip access-time writes.
+- After editing fstab: `sudo systemctl daemon-reload && sudo mount -a`. Test before rebooting.
+
+### LVM (Logical Volume Manager) — Resize Disks Without Downtime
+
+`PV` (physical volume: disk/partition) → `VG` (volume group: pool) → `LV` (logical volume: what you format and mount).
+```bash
+sudo pvcreate /dev/sdb /dev/sdc
+sudo vgcreate vg_data /dev/sdb /dev/sdc
+sudo lvcreate -n lv_app -L 50G vg_data
+sudo mkfs.ext4 /dev/vg_data/lv_app && sudo mount /dev/vg_data/lv_app /data
+
+sudo vgextend vg_data /dev/sdd                          # add a disk to the pool
+sudo lvextend -r -L +20G /dev/vg_data/lv_app            # grow LV *and* filesystem (-r)
+sudo lvextend -r -l +100%FREE /dev/vg_data/lv_app
+sudo lvcreate -s -n snap1 -L 5G /dev/vg_data/lv_app     # point-in-time snapshot
+pvs ; vgs ; lvs                                         # status at a glance
+```
+> Shrinking is risky (ext4: offline only; XFS: impossible). Plan to grow, not shrink. **RAID/LVM mirroring is not a backup.**
+
+### Growing a Cloud Disk (EBS / Azure Managed Disk) Online
+
+1. Enlarge the volume in the console/CLI (AWS: one modification per volume every ~6 hours).
+2. Then on the instance:
+```bash
+lsblk                                  # disk is bigger, the partition is not (NVMe names: /dev/nvme0n1, partition nvme0n1p1)
+sudo growpart /dev/nvme0n1 1           # grow partition 1 (note the space between device and number)
+sudo resize2fs /dev/nvme0n1p1          # ext4: give the device
+sudo xfs_growfs /                      # XFS: give the MOUNT POINT
+df -h /
+```
+> Amazon Linux 2023 root is XFS; Ubuntu is ext4. Use UUIDs in fstab since NVMe device numbering is not stable.
+
+### dd, Swap Files, Loop Devices
+
+```bash
+sudo dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress   # or: fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+sudo mount -o loop image.iso /mnt                      # mount a file as a disk
+sudo dd if=/dev/sda of=/backup/sda.img bs=4M status=progress   # disk image — if=/of= swapped = data loss. Triple-check.
+dd if=/dev/zero of=test.bin bs=1M count=1024 oflag=direct      # crude write test (use fio for real benchmarks)
+truncate -s 1G sparse.img                              # sparse file
+```
+
+### RAID (mdadm) — Know the Levels
+
+| Level | Min disks | Survives | Trade-off |
+|---|---|---|---|
+| 0 | 2 | nothing | speed only, any disk loss = total loss |
+| 1 | 2 | 1 disk | mirror, 50% capacity |
+| 5 | 3 | 1 disk | parity, slow rebuilds |
+| 6 | 4 | 2 disks | double parity |
+| 10 | 4 | 1 per mirror pair | speed + redundancy |
+```bash
+sudo mdadm --create /dev/md0 --level=1 --raid-devices=2 /dev/sdb /dev/sdc
+cat /proc/mdstat ; sudo mdadm --detail /dev/md0
+```
+> In the cloud you rarely build RAID; the provider replicates block storage and you replicate at the application/database layer.
+
+### Repair
+
+```bash
+sudo umount /data && sudo fsck -f /dev/sdb1     # ext4 (NEVER on a mounted filesystem)
+sudo xfs_repair /dev/sdb1                       # XFS (unmounted)
+sudo tune2fs -m 1 /dev/sdb1                     # ext4: reduce reserved blocks from 5% to 1% on a big data disk
+```
+
+### NFS (also how AWS EFS is mounted)
+
+```bash
+# Server: /etc/exports
+/srv/share  10.0.0.0/24(rw,sync,no_subtree_check)
+sudo exportfs -ra ; showmount -e server
+# Client
+sudo mount -t nfs4 server:/srv/share /mnt/share
+# /etc/fstab
+server:/srv/share  /mnt/share  nfs4  defaults,_netdev,nofail  0  0
+```
+> `Stale file handle` after a server change: `umount -l /mnt/share` then remount.
+
+### Disk Full Runbook
+
+```bash
+df -h                                   # which filesystem?
+df -i                                   # inodes exhausted? ("No space left" with free GBs)
+sudo du -xh / --max-depth=1 2>/dev/null | sort -rh | head      # -x stays on one filesystem
+sudo find / -xdev -type f -size +500M -exec ls -lh {} + 2>/dev/null
+sudo lsof +L1                           # deleted-but-open files holding space (restart the process, or truncate via /proc/PID/fd/N)
+sudo journalctl --vacuum-size=500M      # shrink the journal
+docker system df ; docker system prune # container images, layers, build cache
+for d in /*; do echo "$d $(sudo find "$d" -xdev 2>/dev/null | wc -l)"; done | sort -k2 -nr | head   # inode hogs
+```
+> Space "missing" under a mount point: files written to `/data` *before* the disk was mounted are hidden underneath it. `umount /data` and look.
+
 ## System Monitoring & Resources
 
 ### df — Disk Free
@@ -3079,6 +3616,94 @@ ulimit -Sn                   # show the soft limit (current enforced value)
 
 ---
 
+## Kernel, Memory & Performance Troubleshooting
+
+### Reading `free -h` Correctly
+
+```text
+              total   used   free  shared  buff/cache  available
+Mem:           7.7G   2.1G   300M    50M        5.3G       5.2G
+```
+- Linux uses spare RAM as **page cache** (`buff/cache`) and gives it back on demand. Low `free` is normal.
+- **`available`** is the number that matters. Alert on that, not on `free`.
+- Do not "drop caches" in production; it just makes the next reads slow.
+
+### Swap and OOM Killer
+
+```bash
+cat /proc/sys/vm/swappiness            # default 60; lower = prefer keeping data in RAM
+swapon --show ; vmstat 1               # si/so columns > 0 sustained = swapping (memory pressure)
+sudo dmesg -T | grep -iE 'out of memory|killed process'      # the OOM killer's decision log
+cat /proc/PID/oom_score                # higher = more likely to be killed
+echo -500 | sudo tee /proc/PID/oom_score_adj                 # protect a process (systemd: OOMScoreAdjust=-500)
+```
+When RAM and swap are exhausted, the kernel kills the process with the highest `oom_score` (usually the biggest, not the guilty one). Inside a cgroup/container the limit is enforced the same way: exit code **137**, `OOMKilled` in Kubernetes.
+
+### sysctl — Kernel Tunables
+
+```bash
+sysctl -a | grep somaxconn                     # read
+sudo sysctl -w vm.swappiness=10                # change now (lost on reboot)
+echo 'vm.swappiness = 10' | sudo tee /etc/sysctl.d/99-custom.conf && sudo sysctl --system   # persist
+```
+
+| Parameter | Why you touch it |
+|---|---|
+| `vm.swappiness` | Swap eagerness (databases: low) |
+| `vm.max_map_count` | Elasticsearch/OpenSearch require `262144` |
+| `fs.file-max`, `fs.inotify.max_user_watches` | Many files/watchers (dev servers, Kubernetes nodes) |
+| `net.core.somaxconn` | Accept-queue length for busy servers |
+| `net.ipv4.ip_local_port_range` | Ephemeral ports for outbound-heavy hosts |
+| `net.ipv4.ip_forward` | Routers, NAT, Kubernetes nodes |
+| `kernel.pid_max` | Many threads/containers |
+
+### Kernel Modules
+
+```bash
+lsmod | head                          # loaded modules
+modinfo overlay                       # details
+sudo modprobe br_netfilter            # load (resolves dependencies). modprobe -r to unload
+echo br_netfilter | sudo tee /etc/modules-load.d/k8s.conf    # load at boot
+# /etc/modprobe.d/blacklist-foo.conf  ->  blacklist foo     # prevent loading
+```
+
+### CPU: What the Numbers Mean
+
+| `top`/`mpstat` field | Meaning | If high |
+|---|---|---|
+| `us` / `sy` | User / kernel CPU | App is busy / many syscalls or I/O |
+| `wa` (iowait) | CPU idle while waiting for disk | Storage bottleneck |
+| `st` (steal) | Hypervisor took CPU from your VM | **Cloud noisy neighbor, or burstable instance out of credits** |
+| `si` | Soft interrupts | Network-heavy |
+
+Load average counts runnable **and** uninterruptible (I/O-wait) tasks. High load with low CPU = I/O blocking. Compare to `nproc`.
+
+### The 60-Second Checklist (first things to run on a slow server)
+
+```bash
+uptime                      # load trend (1/5/15 min)
+dmesg -T | tail -20         # OOM kills, disk/network errors, hardware faults
+vmstat 1 5                  # r (run queue), b (blocked), si/so (swap), wa
+mpstat -P ALL 1 3           # one hot core = single-threaded bottleneck
+pidstat 1 3                 # per-process CPU
+iostat -xz 1 3              # disk: await (latency), %util, aqu-sz (queue)
+free -m                     # memory (watch "available")
+sar -n DEV 1 3              # network throughput per interface
+sar -n TCP,ETCP 1 3         # retransmits = network problems
+top                         # confirm the culprit
+```
+**USE method** — for each resource (CPU, memory, disk, network) ask: **U**tilization? **S**aturation (queues, waiting)? **E**rrors?
+
+### strace — See What a Process Is Actually Doing
+
+```bash
+strace -f -tt -T -p PID -e trace=network,file    # live: syscalls with timestamps and duration
+strace -c -p PID                                 # summary table after Ctrl+C: which syscalls dominate?
+strace -f -e trace=openat ./app 2>&1 | grep -E 'ENOENT|EACCES'   # "which config file can't it find / read?"
+strace -o trace.txt -ff ./app                    # one file per child process
+```
+> `strace` slows the target a lot; use briefly on production. For CPU profiling use `perf top` / `perf record -g -p PID -- sleep 30`; for always-on deep tracing look at eBPF tools (`bpftrace`, `bcc`).
+
 ## Process Management
 
 ### ps vs top
@@ -3190,6 +3815,31 @@ pkill nginx            # kill by process name (pattern match)
 killall nginx          # kill all processes with exact name match
 ```
 
+### Signals Reference and Exit Codes
+
+| Signal | # | Default | Typical use |
+|---|---|---|---|
+| `SIGHUP` | 1 | terminate | Terminal closed; many daemons **reload config** on it |
+| `SIGINT` | 2 | terminate | Ctrl+C |
+| `SIGQUIT` | 3 | core dump | Ctrl+\ |
+| `SIGKILL` | 9 | terminate | **Cannot be caught/ignored**; no cleanup |
+| `SIGSEGV` | 11 | core dump | Invalid memory access (bug) |
+| `SIGTERM` | 15 | terminate | Polite shutdown; what `kill`, systemd and Kubernetes send first |
+| `SIGSTOP` / `SIGCONT` | 19 / 18 | stop / resume | `SIGSTOP` cannot be caught; Ctrl+Z sends `SIGTSTP` (20) |
+| `SIGUSR1` / `SIGUSR2` | 10 / 12 | terminate | App-defined (log reopen, dump state) |
+
+**Exit code = 128 + signal number** when a process dies from a signal: `137` = SIGKILL (often OOM), `143` = SIGTERM, `139` = SIGSEGV, `130` = Ctrl+C.
+
+```bash
+pgrep -af nginx                  # find by name, show full command line
+pkill -f 'python app.py'         # match the whole command line (careful!)
+pstree -p                        # process tree with PIDs
+kill -0 PID && echo alive        # signal 0: just test existence/permission
+kill -HUP $(pidof nginx)         # reload
+setsid ./job.sh &                # new session: survives terminal close (alternative to nohup)
+```
+> Graceful shutdown pattern (and what Kubernetes does): send `SIGTERM`, wait for a grace period, then `SIGKILL`. Your app must handle `SIGTERM` (finish requests, close connections) or it will be killed mid-work.
+
 ### Quick Interview One-Liners
 
 - **`kill` vs `kill -9`?** `kill` (SIGTERM) asks the process to shut down gracefully — it can catch the signal and clean up first. `kill -9` (SIGKILL) terminates it immediately at the kernel level — it cannot be caught, ignored, or blocked, so no cleanup happens.
@@ -3250,6 +3900,22 @@ at> <Ctrl+D>
 atq    # List pending at jobs
 atrm 3 # Remove job number 3
 ```
+
+### cron Pitfalls (Why "It Works When I Run It Manually")
+
+- **Minimal environment**: cron's `PATH` is basically `/usr/bin:/bin`, with no profile or `.bashrc`. Use absolute paths and set `PATH=` at the top of the crontab.
+- **`%` is special** in a crontab line (means newline). Escape it: `date +\%F`.
+- **No terminal**: no prompts, no colors. Redirect output or you lose errors (or get local mail):
+  `0 2 * * * /opt/backup.sh >> /var/log/backup.log 2>&1`
+- **Time zone** = the system's. DST can skip or repeat 02:30. Run servers in UTC.
+- `/etc/crontab` and `/etc/cron.d/*` have an extra **user field**: `0 2 * * * root /opt/backup.sh`.
+- `/etc/cron.daily/*` scripts are run by `run-parts`: **no dots in filenames** (`backup.sh` is silently skipped; use `backup`) and the file must be executable.
+- **Prevent overlap** if a run can outlast its interval:
+```bash
+*/5 * * * * flock -n /var/lock/sync.lock /opt/sync.sh >> /var/log/sync.log 2>&1
+```
+- **Debug**: `grep CRON /var/log/syslog` (RHEL: `/var/log/cron`), `journalctl -u cron`. See the environment cron gives you: `* * * * * env > /tmp/cronenv`. Reproduce it: `env -i /bin/sh -c '/opt/backup.sh'`.
+- `anacron` runs missed daily/weekly jobs after downtime (laptops, powered-off machines). **systemd timers** (see [systemd Deep Dive](#systemd-deep-dive)) give logging, dependencies, and `Persistent=true` catch-up.
 
 ---
 
@@ -3358,6 +4024,73 @@ journalctl -u nginx -f
 ```
 
 > `journalctl` works with systems using systemd's journal. Traditional text logs such as `/var/log/syslog` may still exist depending on the distribution and logging configuration.
+
+### logrotate — Stop Logs Filling the Disk
+
+```text
+# /etc/logrotate.d/myapp
+/var/log/myapp/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress          # compress the previous rotation, not the newest
+    missingok
+    notifempty
+    create 0640 myapp myapp
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP myapp.service   # tell the app to reopen its log file
+    endscript
+}
+```
+```bash
+sudo logrotate -d /etc/logrotate.d/myapp   # dry run / debug
+sudo logrotate -f /etc/logrotate.d/myapp   # force now
+cat /var/lib/logrotate/status              # when each log last rotated
+```
+> `copytruncate` rotates apps that cannot reopen logs, but can lose lines written during the copy. Prefer a reload signal. Containers should log to stdout and let the platform handle it.
+
+### rsyslog, `logger`, and Shipping Logs
+
+```bash
+logger -p local0.info -t myapp "deploy finished"       # write to syslog from scripts
+sudo tail -f /var/log/syslog | grep myapp
+# /etc/rsyslog.d/50-forward.conf  ->  *.* @@logserver.internal:514    (@@ = TCP, @ = UDP)
+```
+Syslog **facilities** (`auth`, `kern`, `local0-7`) × **severities** (`emerg`=0 ... `debug`=7). On servers you normally run an agent (CloudWatch agent, Azure Monitor agent, Fluent Bit, Vector) to ship logs to a central place; local disks are not an archive.
+
+### journald Persistence and Size
+
+```bash
+journalctl --disk-usage
+sudo journalctl --vacuum-time=7d ; sudo journalctl --vacuum-size=500M
+# /etc/systemd/journald.conf
+#   [Journal]
+#   Storage=persistent     # survive reboots (needs /var/log/journal)
+#   SystemMaxUse=500M
+```
+
+### auditd — Who Changed What
+
+```bash
+sudo auditctl -w /etc/passwd -p wa -k identity     # watch writes/attribute changes
+sudo auditctl -w /etc/ssh/sshd_config -p wa -k sshd
+sudo ausearch -k identity -i | tail                # search by key, interpreted output
+sudo aureport --auth --summary                     # authentication summary
+# Persist rules in /etc/audit/rules.d/*.rules
+```
+
+### Time Synchronization
+
+Wrong clocks break TLS validation, JWT/token expiry, AWS request signatures, Kerberos (±5 min), log correlation, and distributed databases.
+```bash
+timedatectl                              # time, zone, "System clock synchronized: yes"
+sudo timedatectl set-timezone UTC        # servers: use UTC
+sudo timedatectl set-ntp true
+chronyc tracking ; chronyc sources -v    # chrony (RHEL default): offset and upstreams
+timedatectl timesync-status              # systemd-timesyncd (Ubuntu default)
+```
+> Cloud: use the provider's source (AWS Time Sync at `169.254.169.123`; Azure syncs from the host). Don't point cloud VMs at random public pools.
 
 ---
 
@@ -3479,6 +4212,61 @@ grep "denied" /var/log/audit/audit.log
 
 ---
 
+## Linux Security Hardening Baseline
+
+### AppArmor (Ubuntu/Debian's MAC) vs SELinux
+
+| | AppArmor | SELinux |
+|---|---|---|
+| Model | **Path-based** profiles per program | **Label-based** (contexts on every file/process) |
+| Default on | Ubuntu, Debian, SUSE | RHEL family, Fedora, Amazon Linux |
+| Modes | enforce / complain | enforcing / permissive / disabled |
+| Complexity | Easier | Finer-grained, steeper |
+
+```bash
+sudo aa-status                          # loaded profiles and their modes
+sudo aa-complain /usr/sbin/nginx        # log violations but don't block (debugging)
+sudo aa-enforce /usr/sbin/nginx
+# Denials appear in the journal/syslog as "apparmor=DENIED"
+```
+> When something "works as root but not as the service" and file modes are right, check the MAC layer before blaming permissions. Do not disable it as a fix; switch to complain/permissive, find the denial, and add a rule.
+
+### Server Hardening Checklist
+
+```text
+Accounts & access
+  [ ] SSH key-only, PermitRootLogin no, AllowUsers/AllowGroups set (see SSH section)
+  [ ] No shared accounts; lock unused ones: passwd -l <user>
+  [ ] sudo rules are specific; MFA on bastion/VPN
+Patching
+  [ ] Automatic security updates: unattended-upgrades (Debian) / dnf-automatic (RHEL)
+  [ ] Know what needs a restart: needrestart (Debian) / needs-restarting -r (RHEL)
+  [ ] Hold risky packages deliberately: apt-mark hold <pkg> (and track why)
+Attack surface
+  [ ] ss -tulnp : every listener is expected. Remove/disable the rest: systemctl disable --now <svc>
+  [ ] Host firewall default-deny inbound (ufw/firewalld/nftables) in addition to cloud SG/NSG
+  [ ] Uninstall compilers/tools you don't need on production hosts
+Detection
+  [ ] fail2ban (fail2ban-client status sshd) or equivalent rate limiting
+  [ ] auditd rules on identity/config files; logs shipped off-host
+  [ ] File integrity (AIDE) and periodic audit: sudo lynis audit system ; CIS Benchmark / OpenSCAP
+Hygiene
+  [ ] No secrets in command-line args (visible in `ps` and /proc/PID/cmdline) or in shell history
+  [ ] World-writable files: find / -xdev -type f -perm -0002 ; SUID audit: find / -xdev -perm -4000
+  [ ] Time sync on, logs rotated, disks monitored
+```
+
+**Kernel hardening via sysctl** (`/etc/sysctl.d/99-hardening.conf`):
+```text
+net.ipv4.tcp_syncookies = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.all.rp_filter = 1       # test first: multi-NIC hosts and some CNIs need 2 (loose)
+kernel.randomize_va_space = 2
+kernel.kptr_restrict = 2
+kernel.dmesg_restrict = 1
+```
+
 ## Encoding & Misc Utilities
 
 ### Base64
@@ -3525,7 +4313,43 @@ md5sum test.txt
 echo "hello" | md5sum    # Hashing text
 ```
 
----
+## openssl — Certificates, Keys, and Randomness
+
+```bash
+# Keys and certificates
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out key.pem
+openssl req -new -key key.pem -subj "/CN=example.com" \
+  -addext "subjectAltName=DNS:example.com,DNS:www.example.com" -out req.csr     # CSR to send to a CA
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 365 \
+  -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"    # self-signed for dev
+
+# Inspect
+openssl x509 -in cert.pem -noout -subject -issuer -dates -ext subjectAltName
+openssl x509 -in cert.pem -noout -checkend 2592000 || echo "expires within 30 days"   # monitoring-friendly exit code
+openssl verify -CAfile ca.pem cert.pem
+
+# Check a live server (-servername is required for SNI; without it you may get the wrong cert)
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -dates -subject -issuer
+openssl s_client -connect example.com:443 -servername example.com -showcerts     # full chain served
+
+# Does this key belong to this cert? (hashes must match)
+openssl x509 -in cert.pem -noout -pubkey | sha256sum
+openssl pkey -in key.pem -pubout | sha256sum
+
+# Convert / secrets / hashes
+openssl pkcs12 -export -out bundle.pfx -inkey key.pem -in cert.pem -certfile chain.pem   # PEM -> PFX
+openssl rand -base64 32 ; openssl rand -hex 16                                           # random secrets
+openssl enc -aes-256-cbc -pbkdf2 -salt -in secret.txt -out secret.enc                    # symmetric encrypt (-d to decrypt)
+openssl dgst -sha256 file
+```
+
+| Format | Meaning |
+|---|---|
+| PEM (`.pem .crt .key`) | Base64 text with `-----BEGIN ...-----` (most common on Linux) |
+| DER (`.der .cer`) | Binary |
+| PKCS#12 (`.pfx .p12`) | Cert + key + chain in one password-protected file (Windows/Java) |
+
+> A "certificate expired" outage is one of the most avoidable. Put `openssl x509 -checkend` (or your monitoring's cert check) on every public endpoint.
 
 ## Sending Email from the Linux Terminal
 
@@ -4688,6 +5512,100 @@ risky_command
 set -e    # Turn it back on
 ```
 
+### Parameter Expansion Cheat Sheet
+
+| Form | Result |
+|---|---|
+| `${v:-default}` | Use `default` if `v` is unset or empty |
+| `${v:?message}` | **Abort with message** if unset/empty (great for required config) |
+| `${v:+alt}` | `alt` if `v` is set, else empty |
+| `${v#prefix}` / `${v##*/}` | Strip shortest / longest matching prefix (`##*/` = basename) |
+| `${v%suffix}` / `${v%%.*}` | Strip shortest / longest matching suffix (`%%.*` removes all extensions) |
+| `${!name}` | Indirect: value of the variable whose name is in `name` |
+
+```bash
+f=/var/log/app.tar.gz
+echo "${f##*/}"   # app.tar.gz     ${f%.gz} -> /var/log/app.tar   ${f%%.*} -> /var/log/app
+: "${DB_HOST:?DB_HOST must be set}"
+```
+
+### Quoting, Word Splitting, and Classic Traps
+
+```bash
+for f in $(ls *.log); do ...      # BREAKS on spaces/newlines. Use a glob: for f in *.log; do
+find . -name '*.log' -print0 | while IFS= read -r -d '' f; do rm -- "$f"; done   # safe for any filename
+[ -z $var ]                       # breaks when var is empty/has spaces. Quote it: [ -z "$var" ]  (or use [[ ]])
+cd "$dir" || exit 1               # never continue after a failed cd (the next rm runs in the wrong place)
+local out; out=$(cmd)             # `local out=$(cmd)` MASKS cmd's exit status (always 0). Declare, then assign.
+```
+> `set -e` does **not** trigger inside `if`/`while` conditions, in `cmd || true`, or on the left of `&&`. Don't treat it as complete error handling; check critical commands explicitly.
+
+### Production Script Template
+
+```bash
+#!/usr/bin/env bash
+set -Eeuo pipefail                       # -E: ERR trap also fires inside functions
+IFS=$'\n\t'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOCK_FILE="/var/lock/$(basename "$0").lock"
+TMP_DIR="$(mktemp -d)"
+
+log()  { printf '%s [%s] %s\n' "$(date -u +%FT%TZ)" "$1" "${*:2}" >&2; }
+die()  { log ERROR "$*"; exit 1; }
+cleanup() { rm -rf "$TMP_DIR"; }
+trap cleanup EXIT
+trap 'log ERROR "failed at line $LINENO: $BASH_COMMAND"' ERR
+
+usage() { echo "Usage: $0 [-n] -e <env>" >&2; exit 2; }
+DRY_RUN=0 ENVIRONMENT=""
+while getopts "ne:h" opt; do
+  case $opt in
+    n) DRY_RUN=1 ;;
+    e) ENVIRONMENT=$OPTARG ;;
+    *) usage ;;
+  esac
+done
+[[ -n $ENVIRONMENT ]] || usage
+
+require_cmd() { command -v "$1" >/dev/null || die "missing dependency: $1"; }
+require_cmd jq; require_cmd curl
+
+exec 9>"$LOCK_FILE"; flock -n 9 || die "another instance is running"   # no overlapping runs
+
+run() { if (( DRY_RUN )); then log INFO "[dry-run] $*"; else "$@"; fi; }
+
+main() {
+  log INFO "starting for $ENVIRONMENT"
+  run echo "do the work here"
+  log INFO "done"
+}
+main "$@"
+```
+**Make scripts idempotent** (safe to run twice): `mkdir -p`, `ln -sfn`, `grep -q 'line' f || echo 'line' >> f`, `command -v tool || install_tool`, `rm -f`.
+
+### Tooling
+
+```bash
+shellcheck script.sh                  # static analysis: catches quoting bugs, bashisms (apt install shellcheck)
+shfmt -w script.sh                    # formatter
+bash -n script.sh                     # syntax only
+PS4='+ ${BASH_SOURCE##*/}:${LINENO}: ' bash -x script.sh    # readable xtrace with file:line
+mapfile -t lines < file               # read a file into an array (bash 4+; macOS ships 3.2)
+```
+Test with **bats** (`bats-core`) for scripts that matter.
+
+### bash vs POSIX sh ("bashisms")
+
+| Works only in bash | POSIX alternative |
+|---|---|
+| `[[ ... ]]`, `=~` | `[ ... ]`, `case`, `expr`/`grep` |
+| arrays, `declare -A` | positional params / newline-delimited strings |
+| `<<<` here-string, `<( )` | `echo "$x" \|` / temp files |
+| `{1..5}`, `${v^^}` | `seq 1 5`, `tr` |
+| `function name {}` | `name() {}` |
+
+Alpine/BusyBox and Debian's `/bin/sh` (dash) are not bash. Use `#!/usr/bin/env bash` when you need bash, or verify with `dash -n script.sh` / `checkbashisms`.
+
 ---
 
 ## I/O Redirection & Pipelines
@@ -5180,6 +6098,131 @@ systemctl list-units --failed   # List failed services
 
 ---
 
+## systemd Deep Dive
+
+### Unit Types and Where Files Live
+
+`.service` (processes) · `.timer` (schedules) · `.socket` (socket activation) · `.mount`/`.automount` · `.target` (groups, like runlevels) · `.path` (file watchers).
+
+| Location | Purpose | Precedence |
+|---|---|---|
+| `/etc/systemd/system/` | **Yours** (units and overrides) | Highest |
+| `/run/systemd/system/` | Runtime/transient | Middle |
+| `/usr/lib/systemd/system/` | Packages ship here; **never edit** | Lowest |
+
+### Writing a Service
+
+```ini
+# /etc/systemd/system/myapp.service
+[Unit]
+Description=My App
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=myapp
+Group=myapp
+WorkingDirectory=/opt/myapp
+EnvironmentFile=-/etc/myapp/env          # leading "-" = don't fail if missing
+ExecStart=/opt/myapp/bin/myapp --port 8080   # absolute path; no shell syntax (no pipes/redirects/&&)
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+StateDirectory=myapp                     # creates /var/lib/myapp owned by User=
+# Hardening (check the score with: systemd-analyze security myapp)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl daemon-reload             # REQUIRED after creating/editing unit files
+sudo systemctl enable --now myapp        # start now and at boot
+systemctl status myapp ; journalctl -u myapp -f
+systemd-analyze verify /etc/systemd/system/myapp.service
+```
+
+| `Type=` | Use when |
+|---|---|
+| `simple` | Process stays in the foreground (default; most modern apps) |
+| `forking` | Classic daemon that forks to background (set `PIDFile=`) |
+| `oneshot` | Runs and exits (scripts, timers' jobs) |
+| `notify` | App signals readiness via `sd_notify` |
+
+**Dependencies vs ordering are separate:** `Wants=` (soft dependency), `Requires=` (hard: stops if the dependency fails), `After=`/`Before=` (**ordering only**, does not start anything). You usually need both, e.g. `Requires=postgresql.service` + `After=postgresql.service`.
+
+### Overriding Packaged Units (Drop-ins)
+
+```bash
+sudo systemctl edit nginx            # creates /etc/systemd/system/nginx.service.d/override.conf
+#   [Service]
+#   LimitNOFILE=65535
+#   ExecStart=                       # to REPLACE ExecStart, blank it first, then set the new one
+#   ExecStart=/usr/sbin/nginx -g 'daemon off;'
+systemctl cat nginx                  # base unit + all overrides, merged
+systemctl show nginx -p LimitNOFILE  # effective value
+sudo systemctl revert nginx          # drop your overrides
+sudo systemctl mask foo              # make it impossible to start (stronger than disable)
+```
+
+### Timers (modern cron)
+
+```ini
+# /etc/systemd/system/backup.service
+[Unit]
+Description=Nightly backup
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/backup.sh
+
+# /etc/systemd/system/backup.timer
+[Unit]
+Description=Run backup nightly
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true            # run on boot if a run was missed while powered off
+RandomizedDelaySec=300     # spread load across a fleet
+[Install]
+WantedBy=timers.target
+```
+```bash
+sudo systemctl enable --now backup.timer          # enable the TIMER, not the service
+systemctl list-timers --all
+systemd-analyze calendar "Mon..Fri *-*-* 09:00"   # test an OnCalendar expression
+sudo systemd-run --on-calendar="+10m" /usr/local/bin/once.sh   # ad-hoc scheduled job
+```
+
+| | cron | systemd timer |
+|---|---|---|
+| Logs | mail / your redirect | `journalctl -u backup` automatically |
+| Missed runs | skipped (needs anacron) | `Persistent=true` |
+| Dependencies, resource limits, sandboxing | no | yes |
+| Simplicity | one line | two unit files |
+
+### Troubleshooting a Failed Service
+
+```bash
+systemctl status myapp                   # "Active: failed", exit status, last log lines
+journalctl -xeu myapp --no-pager         # full logs with explanations
+systemctl list-units --failed
+sudo systemctl reset-failed myapp        # clear "start request repeated too quickly" (StartLimitBurst)
+sudo -u myapp /opt/myapp/bin/myapp       # run exactly what the unit runs, as the unit's user
+```
+
+| Status in logs | Meaning |
+|---|---|
+| `status=203/EXEC` | `ExecStart` binary missing, not executable, wrong shebang/arch |
+| `status=200/CHDIR` | `WorkingDirectory` does not exist |
+| `status=217/USER` | `User=` does not exist |
+| `status=226/NAMESPACE` | A sandbox option (`ProtectSystem`, `ReadWritePaths`) references a bad path |
+| `status=1/FAILURE` | The app itself exited with an error. Read the app's log |
+
+Works by hand but fails as a service? Compare: user, environment (services get a **minimal** env; no `.bashrc`), working directory, file permissions, SELinux/AppArmor (`ausearch -m avc -ts recent`), and `ProtectSystem` blocking writes.
+
 ## Practical Shell Script Examples
 
 ### 1. Directory Backup Script
@@ -5400,5 +6443,66 @@ print(f"{average:.2f}")
 ```bash
 python3 /home/user/python.py > /home/user/solution ; md5sum /home/user/solution
 ```
+
+### More Scenario-Based Troubleshooting (symptom → commands → likely cause)
+
+**Disk is full but `du` doesn't add up**
+```bash
+df -h ; df -i
+sudo lsof +L1                           # deleted-but-open files (log deleted while the app still writes)
+sudo umount /data 2>/dev/null; ls /data # files hidden beneath a mountpoint
+```
+Cause: deleted-open files, inode exhaustion (millions of tiny files: session dirs, mail queues), or data under a mountpoint. Full runbook: [Disk Full Runbook](#disk-full-runbook).
+
+**Server is slow / high load**
+Run the [60-second checklist](#the-60-second-checklist-first-things-to-run-on-a-slow-server). Decide: CPU (`us`), I/O (`wa`, `iostat await`), memory/swap (`si/so`), steal (`st` in a VM: noisy neighbor or burstable credits exhausted), or network (`sar -n TCP,ETCP`).
+
+**Service won't start**
+`systemctl status` → `journalctl -xeu <svc>` → run the `ExecStart` command manually as the service user → check `203/EXEC`, ports in use (`ss -ltnp`), permissions, SELinux/AppArmor, missing `EnvironmentFile`.
+
+**Can't SSH in**
+```bash
+ssh -vvv user@host                       # client view: where does it stop? (timeout vs refused vs publickey)
+```
+Timeout → network/security group/NSG/firewall/route. `Connection refused` → nothing listening (`ss -tlnp | grep ssh`) or host firewall. `Permission denied (publickey)` → user, key, modes, `AllowUsers`, `sshd -T`. Server unreachable but running → console/serial/SSM; full disk or an exhausted `/` also breaks logins.
+
+**"Permission denied" on a file you think you can read**
+```bash
+namei -l /path/to/file                   # permissions of EVERY path component (you need x on each directory)
+getfacl file ; lsattr file               # ACLs, immutable bit
+findmnt -T file                          # mounted read-only? noexec?
+ls -Z file ; sudo ausearch -m avc -ts recent    # SELinux denial (AppArmor: journalctl | grep DENIED)
+sudo -u appuser test -r file && echo ok         # test as the real user
+```
+
+**Port already in use**
+```bash
+ss -ltnp 'sport = :8080'   # or: sudo lsof -i :8080
+```
+
+**Process keeps dying / `Killed`**
+```bash
+sudo dmesg -T | grep -iE 'killed process|out of memory'    # OOM killer? (exit 137 / OOMKilled)
+```
+
+**DNS failing intermittently**
+```bash
+getent hosts name ; dig name ; dig @8.8.8.8 name      # app view vs direct vs external resolver
+resolvectl status ; cat /etc/resolv.conf ; grep hosts /etc/nsswitch.conf
+```
+Cause candidates: wrong resolver, search/`ndots` expansion, `/etc/hosts` override, security group/NACL blocking UDP/TCP 53, resolver rate limits.
+
+**Forgot root password / broken fstab prevents boot**
+- Physical/VM with GRUB: press `e` on the boot entry, append `init=/bin/bash` (Debian) or `rd.break` (RHEL), boot, then `mount -o remount,rw /` (RHEL: `mount -o remount,rw /sysroot; chroot /sysroot`), fix fstab or `passwd root`. On SELinux systems also `touch /.autorelabel`.
+- Cloud VM (no GRUB access): stop the instance, **detach the root volume, attach it to a rescue instance**, mount, fix, re-attach. Or use the serial console.
+
+**"Too many open files" / zombies piling up**
+`ls /proc/PID/fd | wc -l` vs `grep -i 'open files' /proc/PID/limits`; raise `LimitNOFILE`, fix the leak. Zombies (`ps aux | awk '$8=="Z"'`): fix or restart the **parent**, which must `wait()` for children.
+
+**"No space left on device" with free GBs**
+`df -i`. Find the directory with the most entries (loop with `find | wc -l`), delete/rotate the junk (old sessions, tmp files, mail queue).
+
+**Script works manually, fails from cron**
+Minimal `PATH`/env, relative paths, `%` unescaped, no TTY. `* * * * * env > /tmp/cronenv`, use absolute paths, log to a file with `2>&1`.
 
 *This document covers Linux Commands and Shell Scripting from beginner to DevOps-level. Practice these concepts hands-on for best results.*
