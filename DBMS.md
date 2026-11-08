@@ -115,6 +115,64 @@ A **strong entity** has a primary key of its own. A **weak entity** depends on a
 - **Specialization**: Top-down process dividing a higher-level entity into sub-entities (e.g., Employee → Manager, Engineer).
 - **Aggregation**: Treats a relationship as a higher-level entity, allowing it to participate in other relationships.
 
+## Structural Constraints (min, max) Notation
+
+Instead of plain cardinality and participation, each edge between an entity and a relationship can be labelled `(min, max)`:
+
+| Label | Meaning |
+|---|---|
+| `(0,1)` | Optional, at most one — partial participation, "one" side |
+| `(1,1)` | Mandatory, exactly one — total participation, "one" side |
+| `(0,N)` | Optional, any number — partial participation, "many" side |
+| `(1,N)` | Mandatory, at least one — total participation, "many" side |
+
+## Mapping Rules
+
+| ER Construct | Relational Mapping |
+|---|---|
+| Strong entity | One table. Simple attributes become columns. The key attribute becomes the primary key. |
+| Composite attribute | Only the leaf components become columns (`Address` → `Street`, `City`, `Zip`). |
+| Derived attribute | Not stored (computed when needed). |
+| Multivalued attribute | A **separate table** with the owner's primary key plus the attribute; the primary key is the pair (owner key, value). |
+| Weak entity | A table whose primary key is **owner's primary key + partial key**; the owner's key is also a foreign key (usually `ON DELETE CASCADE`). The identifying relationship needs no table of its own. |
+| 1:1 relationship | Put the foreign key on either side — preferably on the side with **total participation**. If both sides are total, the two entities can be **merged into one table**. |
+| 1:N relationship | Put the foreign key (plus any relationship attributes) on the **N side**. No new table. |
+| M:N relationship | A **new table** containing the primary keys of both entities as foreign keys; its primary key is their combination. Relationship attributes become columns. |
+| n-ary relationship (n ≥ 3) | A new table with the keys of all participating entities. The primary key depends on the cardinalities (an entity on the "one" side can be dropped from the key). |
+| Generalization / specialization | (a) One table for the super-class and one per sub-class (sub-class key = super-class key, also a foreign key); (b) tables only for sub-classes, repeating the common columns; (c) a single table with a `type` column and nullable sub-class columns. |
+| Aggregation | The relationship table is treated like an entity; relationships involving the aggregate use its primary key as a foreign key. |
+
+## Worked Example
+
+An organization has these entities and relationships:
+
+```text
+Employee(EmpID, Name, Address{Street, City}, Phone*)       -- Phone is multivalued
+Department(DeptID, DeptName)
+Project(ProjID, Title)
+Dependent(DepName, Age)                                    -- weak entity of Employee
+
+WorksFor   : Employee (N) —— Department (1)                -- every employee works for one department (total)
+Manages    : Employee (1) —— Department (1)                -- one manager per department
+WorksOn    : Employee (M) —— Project (N), attribute Hours
+Has        : Employee (1) —— Dependent (N)                 -- identifying relationship
+```
+
+Resulting tables:
+
+```sql
+Department (DeptID PK, DeptName, ManagerID FK→Employee)         -- Manages merged here (1:1)
+Employee   (EmpID PK, Name, Street, City, DeptID FK→Department) -- WorksFor merged here (N:1)
+EmpPhone   (EmpID FK→Employee, Phone, PRIMARY KEY (EmpID, Phone))
+Project    (ProjID PK, Title)
+WorksOn    (EmpID FK, ProjID FK, Hours, PRIMARY KEY (EmpID, ProjID))
+Dependent  (EmpID FK→Employee, DepName, Age, PRIMARY KEY (EmpID, DepName))
+```
+
+**Pattern to count the minimum number of tables:** one table per entity, one extra table per multivalued attribute, one extra table per M:N (or n-ary) relationship, and **no** extra table for 1:1 and 1:N relationships (merge them into an existing table). In the example: 4 entities (Employee, Department, Project, Dependent) + 1 multivalued attribute + 1 M:N relationship = **6 tables**.
+
+**Remember:** foreign key on the N side; a separate table only for M:N and multivalued attributes; weak entity key = owner key + partial key.
+
 ---
 
 # Relational Model and Keys
@@ -147,6 +205,29 @@ A key made up of two or more attributes that together uniquely identify a tuple.
 
 Every primary key is a candidate key, every candidate key is a super key, but the reverse is not always true.
 
+## Properties of a Relation
+
+- A relation is a **set** of tuples: no duplicate tuples, and tuple order does not matter.
+- Attribute order does not matter (attributes are identified by name).
+- Every value is atomic (1NF).
+- **Degree** = number of attributes; **cardinality** = number of tuples.
+- The Cartesian product of R (degree *a*, *n* tuples) and S (degree *b*, *m* tuples) has degree *a + b* and cardinality *n × m*.
+
+## Counting Super Keys
+
+For a relation with *n* attributes:
+
+| Situation | Number of super keys |
+|---|---|
+| One candidate key with *k* attributes | 2^(n − k) |
+| Only candidate key is a single attribute | 2^(n − 1) |
+| Two candidate keys K1 and K2 | 2^(n − \|K1\|) + 2^(n − \|K2\|) − 2^(n − \|K1 ∪ K2\|) |
+| No restriction other than "all attributes together form a key" | 1 (only the full set) |
+
+**Example:** R(A, B, C, D) with candidate keys {A} and {B}: 2³ + 2³ − 2² = 8 + 8 − 4 = **12** super keys.
+
+**Maximum number of candidate keys** in a relation with *n* attributes = C(n, ⌊n/2⌋). For n = 4 that is C(4, 2) = **6** (all 2-attribute subsets, none contained in another).
+
 ---
 
 # Relational Algebra
@@ -163,6 +244,202 @@ Procedural query language operating on relations, forming the theoretical basis 
 
 ---
 
+## Relational Algebra: Operators Explained
+
+### Union Compatibility
+
+Union, intersection and difference require both relations to have the **same degree** and **compatible domains** for corresponding attributes. The result takes its attribute names from the first relation.
+
+### Operators Added Beyond the Basic Six
+
+| Operator | Symbol | Meaning | Definition |
+|---|---|---|---|
+| Intersection | R ∩ S | Tuples in both | R − (R − S) |
+| Theta join | R ⋈θ S | Join on any condition θ (`<`, `>`, `=`, ...) | σθ(R × S) |
+| Equi join | R ⋈ S | Theta join where θ uses only `=` | σ(R.A = S.B)(R × S) |
+| Natural join | R ⋈ S | Equi join on **all common attributes**, common columns kept once | π(...)(σ(common equal)(R × S)) |
+| Left outer join | R ⟕ S | Natural join plus unmatched R tuples padded with NULL | — |
+| Right outer join | R ⟖ S | Natural join plus unmatched S tuples padded with NULL | — |
+| Full outer join | R ⟗ S | Both of the above | — |
+| Semi join | R ⋉ S | Tuples of R that have a match in S (only R's columns) | π(attrs of R)(R ⋈ S) |
+| Division | R ÷ S | See below | π(X)(R) − π(X)((π(X)(R) × S) − R) |
+| Grouping / aggregation | 𝒢 | Aggregates per group | `DeptID 𝒢 COUNT(EmpID), AVG(Salary) (Employee)` |
+
+### Division (÷)
+
+Let R(X, Y) and S(Y). Then **R ÷ S** contains every X-value that is paired in R with **every** Y-value in S. It is the algebra operator for "for all" queries.
+
+```text
+Enrolled(sid, cid)          Course(cid)           Enrolled ÷ Course
+ S1  C1                      C1                    sid
+ S1  C2                      C2                    S1
+ S2  C1
+ S3  C1
+ S3  C2
+```
+
+S1 and S3 are paired with both C1 and C2, so the result is {S1, S3}.
+
+### Size of Results (useful for estimating)
+
+For R with *n* tuples and S with *m* tuples:
+
+| Expression | Minimum tuples | Maximum tuples |
+|---|---|---|
+| σ(R) | 0 | n |
+| π(R) (duplicates removed) | 1 (if n ≥ 1) | n |
+| R ∪ S | max(n, m) | n + m |
+| R ∩ S | 0 | min(n, m) |
+| R − S | 0 | n |
+| R × S | n × m | n × m |
+| R ⋈ S (natural join) | 0 | n × m |
+| R ⋈ S where the join attribute is a **key of S** and a foreign key in R | 0 (or n if no NULLs and referential integrity holds) | n |
+
+> Relational algebra uses **set semantics** (duplicates removed after every operation); SQL uses **bag semantics** (duplicates kept unless `DISTINCT` is used).
+
+### Worked Queries
+
+Schema: `Student(sid, sname)`, `Course(cid, cname)`, `Enrolled(sid, cid)`.
+
+```text
+1. Names of students enrolled in C1
+   π sname ( σ cid='C1' ( Student ⋈ Enrolled ) )
+
+2. Students enrolled in C1 or C2
+   π sid ( σ cid='C1' ∨ cid='C2' (Enrolled) )
+
+3. Students enrolled in both C1 and C2
+   π sid ( σ cid='C1' (Enrolled) )  ∩  π sid ( σ cid='C2' (Enrolled) )
+
+4. Students not enrolled in any course
+   π sid (Student)  −  π sid (Enrolled)
+
+5. Students enrolled in ALL courses
+   π sid, cid (Enrolled)  ÷  π cid (Course)
+
+6. Highest salary in Emp(eid, salary)  (needs a self join with rename)
+   π salary (Emp)  −  π E1.salary ( σ E1.salary < E2.salary ( ρ E1(Emp) × ρ E2(Emp) ) )
+```
+
+**Pattern to solve algebra questions:** "not / never / no" → set difference; "all / every" → division; "both" → intersection (or join twice); "either" → union; "highest/lowest" → self join with a comparison, then subtract.
+
+### Useful Equivalences (used by query optimizers)
+
+| Rule | Equivalence |
+|---|---|
+| Cascade of selections | σc1∧c2(R) = σc1(σc2(R)) |
+| Selections commute | σc1(σc2(R)) = σc2(σc1(R)) |
+| Cascade of projections | πA(πA,B(R)) = πA(R) |
+| Push selection through join | σc(R ⋈ S) = σc(R) ⋈ S, if *c* uses only R's attributes |
+| Join is commutative and associative | R ⋈ S = S ⋈ R; (R ⋈ S) ⋈ T = R ⋈ (S ⋈ T) |
+| Selection over union | σc(R ∪ S) = σc(R) ∪ σc(S) |
+
+**Optimization heuristic:** do selections and projections as early as possible to shrink intermediate results, and order joins so that the smallest intermediate results come first.
+
+### Expressive Power
+
+The operators σ, π, ∪, −, ×, ρ form a **complete** basic set. Intersection, joins and division can all be derived from them.
+
+---
+
+## Tuple Relational Calculus (TRC)
+
+Relational calculus is **declarative**: it describes *what* to retrieve, not the steps. TRC uses **tuple variables** that range over the tuples of a relation.
+
+```text
+{ t | P(t) }          "the set of all tuples t for which predicate P is true"
+```
+
+### Building Blocks
+
+| Element | Notation | Example |
+|---|---|---|
+| Range / membership | `R(t)` or `t ∈ R` | `Employee(t)` |
+| Attribute access | `t.A` or `t[A]` | `t.Salary` |
+| Comparison | `t.A θ s.B`, `t.A θ constant` | `t.Salary > 50000` |
+| Connectives | `∧` (and), `∨` (or), `¬` (not), `→` (implies) | |
+| Existential quantifier | `∃t (P(t))` — at least one tuple satisfies P | |
+| Universal quantifier | `∀t (P(t))` — every tuple satisfies P | |
+
+A variable is **free** if it is not quantified (these form the output tuple) and **bound** if it is quantified by `∃` or `∀`.
+
+**Useful identities:**
+
+```text
+P → Q      ≡  ¬P ∨ Q
+∀x P(x)    ≡  ¬∃x ¬P(x)
+∃x P(x)    ≡  ¬∀x ¬P(x)
+```
+
+### Examples (Employee(EmpID, Name, DeptID, Salary), Department(DeptID, DeptName, Location))
+
+```text
+1. Employees earning more than 50000
+   { t | Employee(t) ∧ t.Salary > 50000 }
+
+2. Only the names of such employees
+   { t | ∃e ( Employee(e) ∧ e.Salary > 50000 ∧ t.Name = e.Name ) }
+
+3. Employees working in a department located in Kolkata
+   { e | Employee(e) ∧ ∃d ( Department(d) ∧ d.DeptID = e.DeptID ∧ d.Location = 'Kolkata' ) }
+
+4. Employees with the highest salary
+   { e | Employee(e) ∧ ¬∃e2 ( Employee(e2) ∧ e2.Salary > e.Salary ) }
+
+5. Departments that have no employees
+   { d | Department(d) ∧ ¬∃e ( Employee(e) ∧ e.DeptID = d.DeptID ) }
+
+6. Students enrolled in ALL courses   (the "division" query)
+   { s | Student(s) ∧ ∀c ( Course(c) → ∃en ( Enrolled(en) ∧ en.sid = s.sid ∧ en.cid = c.cid ) ) }
+```
+
+### Safety of Expressions
+
+An expression is **safe** if it is guaranteed to produce a finite result that only uses values appearing in the database. For example `{ t | ¬Employee(t) }` is **unsafe**: infinitely many tuples are not in Employee. Only safe expressions are allowed.
+
+---
+
+## Domain Relational Calculus (DRC)
+
+DRC uses **domain variables** that range over attribute values instead of whole tuples.
+
+```text
+{ <x1, x2, ..., xn> | P(x1, x2, ..., xn) }
+```
+
+```text
+Names and salaries of employees earning more than 50000
+{ <n, s> | ∃e, d ( <e, n, d, s> ∈ Employee ∧ s > 50000 ) }
+
+Names of employees working in Kolkata
+{ <n> | ∃e, d, s, dn ( <e, n, d, s> ∈ Employee ∧ <d, dn, 'Kolkata'> ∈ Department ) }
+```
+
+## Comparison of the Three Query Languages
+
+| Aspect | Relational Algebra | Tuple Calculus | Domain Calculus |
+|---|---|---|---|
+| Style | Procedural (how) | Declarative (what) | Declarative (what) |
+| Variables range over | Relations | Tuples | Attribute values |
+| Influence | Basis of query execution plans | Basis of SQL's `FROM`/`WHERE`/`EXISTS` style | Basis of Query-By-Example (QBE) |
+| Safe expressions | — | Required | Required |
+
+**Codd's theorem:** relational algebra, **safe** tuple calculus and **safe** domain calculus have **equal expressive power**. A language with at least this power is called **relationally complete**. SQL is more powerful still (aggregates, ordering, recursion), whereas plain relational algebra cannot express aggregates or transitive closure.
+
+### Translating Between Algebra and Calculus
+
+| Algebra | Calculus |
+|---|---|
+| σ (selection) | Extra conditions in the predicate |
+| π (projection) | Existential quantifier over the dropped attributes |
+| ∪ | `∨` |
+| − | `∧ ¬` |
+| ∩ | `∧` |
+| × / ⋈ | Several tuple variables, linked by equality conditions |
+| ÷ | `∀ ... → ∃ ...` |
+
+---
+
 # Normalization
 
 ## Purpose
@@ -172,6 +449,109 @@ Normalization is the process of organizing data to minimize redundancy and avoid
 ## Functional Dependency
 
 A constraint where one attribute uniquely determines another. Written as `A → B`, meaning the value of A determines the value of B.
+
+## Types of Functional Dependencies
+
+| Type | Condition | Example |
+|---|---|---|
+| Trivial | `Y ⊆ X` in `X → Y` | `{StudentID, Name} → Name` |
+| Non-trivial | `Y ⊄ X` | `StudentID → Name` |
+| Completely non-trivial | `X ∩ Y = ∅` | `StudentID → Name` |
+| Partial | Y depends on a **proper subset** of a candidate key | `Student_ID → Student_Name` with key `(Student_ID, Course_ID)` |
+| Transitive | `X → Y` and `Y → Z`, with `Y` not a key and `Y ↛ X` | `Student_ID → Dept_ID → Dept_Name` |
+
+## Armstrong's Axioms
+
+These three rules are **sound** (they only derive true dependencies) and **complete** (they derive every dependency that is implied).
+
+| Axiom | Rule |
+|---|---|
+| Reflexivity | If `Y ⊆ X`, then `X → Y` |
+| Augmentation | If `X → Y`, then `XZ → YZ` |
+| Transitivity | If `X → Y` and `Y → Z`, then `X → Z` |
+
+Derived rules (all follow from the three axioms):
+
+| Rule | Statement |
+|---|---|
+| Union | `X → Y` and `X → Z` ⇒ `X → YZ` |
+| Decomposition | `X → YZ` ⇒ `X → Y` and `X → Z` |
+| Pseudo-transitivity | `X → Y` and `WY → Z` ⇒ `WX → Z` |
+
+> Decomposition applies to the **right side only**. `AB → C` does **not** imply `A → C` or `B → C`.
+
+## Closure of an Attribute Set
+
+`X⁺` (the closure of X under F) is the set of all attributes functionally determined by X.
+
+**Algorithm:** start with `result = X`; repeatedly, for every FD `Y → Z` in F with `Y ⊆ result`, add `Z` to `result`; stop when nothing changes.
+
+**Example:** R(A, B, C, D, E), F = { A → B, BC → D, D → E }
+
+```text
+{A, C}⁺ : start {A, C}
+          A → B   → {A, B, C}
+          BC → D  → {A, B, C, D}
+          D → E   → {A, B, C, D, E}      = all attributes, so AC is a super key
+```
+
+**Uses of closure:**
+
+| Question | How closure answers it |
+|---|---|
+| Is `X → Y` implied by F? | Compute `X⁺`; the answer is yes if `Y ⊆ X⁺` |
+| Is `X` a super key? | `X⁺` contains all attributes of R |
+| Is `X` a candidate key? | `X` is a super key and no proper subset of `X` is |
+
+## Finding All Candidate Keys
+
+1. Attributes that **never appear on the right side** of any FD must be in **every** candidate key.
+2. Attributes that appear **only on the right side** are in **no** candidate key.
+3. Compute the closure of the mandatory set from step 1. If it covers R, that set is the **only** candidate key.
+4. Otherwise add attributes that appear on both sides, one at a time (then in pairs...), keeping only minimal sets.
+
+**Example 1:** R(A, B, C, D, E), F = { A → B, BC → D, D → E }
+
+```text
+Never on a right side: A, C   → AC⁺ = {A,B,C,D,E}  → the only candidate key is AC
+```
+
+**Example 2 (several keys):** R(A, B, C, D), F = { AB → C, C → D, D → A }
+
+```text
+B never appears on a right side → B is in every key.
+B⁺ = {B}, not enough.
+AB⁺ : AB→C, C→D        → {A,B,C,D}  ✔
+BC⁺ : C→D, D→A, AB→C   → {A,B,C,D}  ✔
+BD⁺ : D→A, AB→C        → {A,B,C,D}  ✔
+Candidate keys: AB, BC, BD.  Prime attributes: A, B, C, D.
+```
+
+## Equivalence of FD Sets
+
+F **covers** G if every FD in G can be derived from F (i.e., for every `X → Y` in G, `Y ⊆ X⁺` computed using F). F and G are **equivalent** if each covers the other.
+
+## Canonical (Minimal) Cover
+
+A canonical cover Fc is a minimal equivalent set of FDs: every right side is a single attribute, there are no extraneous attributes on any left side, and no FD is redundant.
+
+**Steps:**
+
+1. Split every right side into single attributes (`X → YZ` becomes `X → Y`, `X → Z`).
+2. Remove **extraneous left-side attributes**: in `XA → B`, attribute `A` is extraneous if `B ∈ X⁺` (computed with all FDs).
+3. Remove **redundant FDs**: delete `X → A` if `A` is still in `X⁺` computed without that FD.
+
+**Example:** F = { A → BC, B → C, A → B, AB → C }
+
+```text
+Step 1: A→B, A→C, B→C, A→B, AB→C            (duplicates removed: A→B, A→C, B→C, AB→C)
+Step 2: AB→C : is A extraneous?  B⁺ contains C, so yes → replace by B→C (a duplicate)
+        Now F = { A→B, A→C, B→C }
+Step 3: A→C : without it, A⁺ = {A, B, C} (via A→B, B→C) → redundant, delete
+Canonical cover: { A → B, B → C }
+```
+
+The canonical cover is **not always unique**.
 
 ## Normal Forms
 
@@ -423,6 +803,156 @@ A table is in 5NF if it is in 4NF and cannot be decomposed into smaller tables w
 | 2NF         | No partial dependency                          | Dependency on part of a composite key   |
 | 3NF         | No transitive dependency of non-key attributes | Indirect dependency                     |
 | BCNF        | Every determinant is a superkey                | Remaining determinant-related anomalies |
+
+## Prime and Non-Prime Attributes
+
+A **prime attribute** belongs to at least one candidate key; a **non-prime attribute** belongs to none.
+
+## Formal Definitions
+
+| Normal Form | Condition on every non-trivial FD `X → A` that holds |
+|---|---|
+| 1NF | All values atomic, no repeating groups |
+| 2NF | In 1NF, and no non-prime attribute is partially dependent on any candidate key |
+| 3NF | `X` is a super key **or** `A` is a prime attribute |
+| BCNF | `X` is a super key |
+
+```text
+BCNF  ⊂  3NF  ⊂  2NF  ⊂  1NF
+```
+
+- A relation with **only simple (single-attribute) candidate keys** is automatically in 2NF.
+- A relation where **all attributes are prime** is automatically in 3NF.
+- A relation with only **two attributes** is always in BCNF.
+
+## How to Find the Highest Normal Form
+
+```text
+1. Find all candidate keys (closure method).
+2. List prime and non-prime attributes.
+3. For each FD X → A:
+     - X is a super key?                     → fine for BCNF
+     - else A is prime?                      → violates BCNF, still fine for 3NF
+     - else X is a proper subset of a key?   → partial dependency → violates 2NF
+     - else                                  → transitive dependency → violates 3NF (relation is in 2NF)
+4. The relation's normal form is the highest level at which no FD violates the rules.
+```
+
+**Examples:**
+
+| Relation and FDs | Keys | Result |
+|---|---|---|
+| R(A,B,C,D,E), F = {AB→C, B→D, C→E} | AB | `B → D`: D is non-prime, B is part of key AB → partial dependency. **1NF only.** |
+| R(A,B,C), F = {A→B, B→C} | A | `B → C`: C non-prime, B not a key, B is not part of a key → transitive. **2NF, not 3NF.** |
+| R(A,B,C), F = {AB→C, C→B} | AB, AC | `C → B`: C not a super key but B is prime. **3NF, not BCNF.** |
+| R(A,B,C,D), F = {AB→C, C→D, D→A} | AB, BC, BD | All attributes prime. **3NF, not BCNF** (C and D are not super keys). |
+
+## Anomalies Removed by Normalization
+
+| Anomaly | Meaning | Example |
+|---|---|---|
+| Insertion | Cannot record a fact without unrelated data | Cannot add a department with no students |
+| Deletion | Deleting one fact removes another | Deleting the last student of a department loses the department name |
+| Update | A repeated fact must be changed in many rows | Changing a department name in thousands of rows |
+
+## Properties of Decomposition
+
+### Lossless Join
+
+A decomposition of R into R1 and R2 is **lossless** if `R1 ⋈ R2 = R` for every valid instance (no spurious tuples).
+
+**Test for a binary decomposition:** it is lossless **if and only if** `(R1 ∩ R2) → R1` **or** `(R1 ∩ R2) → R2` follows from F. In words: the common attributes must be a key of at least one of the two parts.
+
+For three or more parts, use the **chase (tableau) test**: build a table with one row per part, apply the FDs to equate symbols, and the decomposition is lossless if some row becomes all "distinguished" symbols.
+
+### Dependency Preservation
+
+A decomposition preserves dependencies if `(F1 ∪ F2 ∪ ...)⁺ = F⁺`, where `Fi` is the set of FDs that can be checked inside `Ri` (those whose attributes all lie in `Ri`, including derived ones).
+
+**Example:** R(A, B, C), F = { A → B, B → C }
+
+| Decomposition | Lossless? | Dependency preserving? |
+|---|---|---|
+| {A,B}, {B,C} | Yes (B is a key of {B,C}) | Yes (`A→B` in the first, `B→C` in the second) |
+| {A,B}, {A,C} | Yes (A is a key of both) | **No** — `B → C` cannot be derived from `A→B`, `A→C` |
+| {A,C}, {B,C} | **No** (C is a key of neither) | — |
+
+## BCNF Decomposition Algorithm
+
+```text
+result = {R}
+while some Ri in result has a non-trivial FD X → Y where X is not a super key of Ri:
+    replace Ri by  (X ∪ Y)  and  (Ri − Y)
+```
+
+- The result is always in BCNF and always **lossless**.
+- It may **not preserve dependencies**.
+
+**Example:** R(Street, City, Zip), F = { Street City → Zip, Zip → City }
+
+```text
+Candidate keys: {Street, City} and {Street, Zip}  → R is in 3NF (City is prime), but not BCNF.
+Zip → City violates BCNF  →  R1(Zip, City),  R2(Street, Zip)
+R1 ∩ R2 = Zip is a key of R1 → lossless.
+The dependency  Street City → Zip  can no longer be checked inside one table → not preserved.
+```
+
+## 3NF Synthesis Algorithm
+
+```text
+1. Compute a canonical cover Fc.
+2. For each FD X → A in Fc, create a relation (X ∪ A)  (merge FDs with the same left side).
+3. If no relation contains a candidate key of R, add one relation that is a candidate key.
+4. Remove any relation whose attributes are contained in another relation.
+```
+
+The result is always in 3NF, **lossless**, and **dependency preserving**.
+
+**Example:** R(A, B, C, D), F = { A → B, B → C }. The candidate key is AD. Synthesis gives R1(A,B), R2(B,C), and R3(A,D) (the key).
+
+| Goal | BCNF | 3NF |
+|---|---|---|
+| Lossless join | Always achievable | Always achievable |
+| Dependency preservation | Not always | Always achievable |
+| Redundancy | None from FDs | Some may remain |
+
+## Multivalued Dependencies and 4NF
+
+A **multivalued dependency** `X ↠ Y` holds if, for a fixed X, the set of Y-values is independent of the other attributes. It arises when two or more **independent** multivalued facts about an entity are stored in one table.
+
+```text
+Employee(Emp, Skill, Language)   with  Emp ↠ Skill  and  Emp ↠ Language
+
+Emp   Skill    Language            Every skill must be paired with every language:
+ E1   Java     English             3 skills × 2 languages = 6 rows
+ E1   Java     Hindi               for one employee.
+ E1   SQL      English
+ E1   SQL      Hindi
+ ...
+```
+
+- Every FD is also an MVD (`X → Y` implies `X ↠ Y`).
+- **Complementation:** if `X ↠ Y`, then `X ↠ R − X − Y`.
+- An MVD is **trivial** if `Y ⊆ X` or `X ∪ Y = R`.
+
+**4NF:** for every non-trivial MVD `X ↠ Y`, X must be a super key. Fix: decompose into `(Emp, Skill)` and `(Emp, Language)`.
+
+## Join Dependency and 5NF
+
+A **join dependency** `*(R1, R2, ..., Rn)` holds if R equals the natural join of its projections on R1...Rn. A relation is in **5NF** (project-join normal form) if every join dependency is implied by its candidate keys.
+
+Typical case: `Supplies(Agent, Company, Product)` where the rule is "if an agent sells a company's products, and the agent sells the product, and the company makes the product, then the agent sells that company's product". It can only be decomposed losslessly into **three** binary tables `(Agent, Company)`, `(Company, Product)`, `(Agent, Product)`, but not into any two.
+
+## Summary of Normal Forms
+
+| Normal Form | Removes | Decomposition guarantees |
+|---|---|---|
+| 1NF | Non-atomic values | — |
+| 2NF | Partial dependencies | Lossless, dependency preserving |
+| 3NF | Transitive dependencies of non-prime attributes | Lossless **and** dependency preserving |
+| BCNF | All FD-based redundancy | Lossless; dependencies **may** be lost |
+| 4NF | Multivalued dependencies | Lossless |
+| 5NF | Join dependencies | Lossless |
 
 ## Denormalization
 
@@ -1164,6 +1694,235 @@ ORDER BY  → ?
 | `HAVING`   | Filter groups          | **Which groups?**  |
 | `ORDER BY` | Sort results           | **What order?**    |
 
+## Set Operations
+
+Both queries must return the same number of columns with compatible types.
+
+| Operator | Result | Duplicates |
+|---|---|---|
+| `UNION` | Rows in either query | Removed |
+| `UNION ALL` | Rows in either query | Kept (faster) |
+| `INTERSECT` | Rows in both queries | Removed |
+| `EXCEPT` (`MINUS` in Oracle) | Rows in the first but not the second | Removed |
+
+```sql
+-- Customers who bought in 2025 but not in 2026
+SELECT customer_id FROM Orders WHERE YEAR(order_date) = 2025
+EXCEPT
+SELECT customer_id FROM Orders WHERE YEAR(order_date) = 2026;
+```
+
+## IN, EXISTS, ANY and ALL
+
+| Predicate | Meaning |
+|---|---|
+| `x IN (subquery)` | `x` equals at least one value returned |
+| `x op ANY (subquery)` | The comparison holds for **at least one** value (`= ANY` is the same as `IN`) |
+| `x op ALL (subquery)` | The comparison holds for **every** value |
+| `EXISTS (subquery)` | True if the subquery returns at least one row |
+| `NOT EXISTS (subquery)` | True if the subquery returns no rows |
+
+```sql
+-- Employees earning more than every employee of department 5
+SELECT Name FROM Employee
+WHERE Salary > ALL (SELECT Salary FROM Employee WHERE DeptID = 5);
+
+-- Departments that have at least one employee
+SELECT d.DeptName FROM Department d
+WHERE EXISTS (SELECT 1 FROM Employee e WHERE e.DeptID = d.DeptID);
+```
+
+> `NOT IN` returns **no rows** if the subquery produces even one `NULL`. Prefer `NOT EXISTS` whenever NULLs are possible.
+
+## Classic Query Patterns
+
+### Second Highest and N-th Highest Salary
+
+```sql
+-- Second highest
+SELECT MAX(salary) FROM Employees
+WHERE salary < (SELECT MAX(salary) FROM Employees);
+
+-- N-th highest (N = 3) using a correlated subquery: exactly N-1 distinct salaries are higher
+SELECT DISTINCT e1.salary
+FROM Employees e1
+WHERE 2 = (SELECT COUNT(DISTINCT e2.salary) FROM Employees e2 WHERE e2.salary > e1.salary);
+
+-- N-th highest using a window function
+SELECT salary
+FROM (SELECT salary, DENSE_RANK() OVER (ORDER BY salary DESC) AS rnk FROM Employees) t
+WHERE rnk = 3;
+```
+
+### Relational Division in SQL ("for all" queries)
+
+```sql
+-- Students enrolled in ALL courses (double NOT EXISTS)
+SELECT s.sid
+FROM Student s
+WHERE NOT EXISTS (
+    SELECT c.cid FROM Course c
+    WHERE NOT EXISTS (
+        SELECT 1 FROM Enrolled e WHERE e.sid = s.sid AND e.cid = c.cid
+    )
+);
+
+-- Same idea with counting
+SELECT sid
+FROM Enrolled
+GROUP BY sid
+HAVING COUNT(DISTINCT cid) = (SELECT COUNT(*) FROM Course);
+```
+
+### Other Frequent Patterns
+
+```sql
+-- Employees earning more than their manager (self join)
+SELECT e.Name
+FROM Employee e JOIN Employee m ON e.ManagerID = m.EmpID
+WHERE e.Salary > m.Salary;
+
+-- Departments with no employees (anti-join)
+SELECT d.DeptName
+FROM Department d LEFT JOIN Employee e ON e.DeptID = d.DeptID
+WHERE e.EmpID IS NULL;
+
+-- Delete duplicate rows, keeping the smallest id
+DELETE FROM Users
+WHERE id NOT IN (SELECT MIN(id) FROM Users GROUP BY email);   -- (MySQL needs a derived table here)
+```
+
+## CASE, COALESCE and NULLIF
+
+```sql
+SELECT name,
+       CASE WHEN salary >= 60000 THEN 'High'
+            WHEN salary >= 40000 THEN 'Medium'
+            ELSE 'Low' END AS band,
+       COALESCE(bonus, 0) AS bonus_or_zero        -- first non-NULL argument
+FROM Employees;
+
+SELECT total / NULLIF(count_items, 0) FROM Orders;  -- avoids divide-by-zero (NULLIF returns NULL when equal)
+```
+
+## NULL and Three-Valued Logic
+
+A comparison with NULL yields **UNKNOWN**. `WHERE` keeps a row only when the condition is **TRUE**.
+
+| `AND` | T | F | U |   | `OR` | T | F | U |   | `NOT` |   |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **T** | T | F | U |   | **T** | T | T | T |   | T | F |
+| **F** | F | F | F |   | **F** | T | F | U |   | F | T |
+| **U** | U | F | U |   | **U** | T | U | U |   | U | U |
+
+| Situation | Behaviour |
+|---|---|
+| `COUNT(*)` | Counts all rows |
+| `COUNT(column)` | Skips NULLs |
+| `SUM`, `AVG`, `MIN`, `MAX` | Ignore NULLs; return NULL if every value is NULL |
+| `GROUP BY` | All NULLs form **one** group |
+| `DISTINCT` | Treats NULLs as equal to each other |
+| `ORDER BY` | NULLs sort first or last depending on the database |
+| `UNIQUE` constraint | Most databases allow several NULLs (SQL Server allows only one) |
+
+## Window Functions
+
+A window function computes a value for each row using a set of related rows (the "window") **without collapsing rows** the way `GROUP BY` does.
+
+```sql
+SELECT name, department, salary,
+       ROW_NUMBER() OVER (PARTITION BY department ORDER BY salary DESC) AS rn,
+       RANK()       OVER (PARTITION BY department ORDER BY salary DESC) AS rnk,
+       DENSE_RANK() OVER (PARTITION BY department ORDER BY salary DESC) AS drnk,
+       SUM(salary)  OVER (PARTITION BY department)                      AS dept_total,
+       LAG(salary)  OVER (PARTITION BY department ORDER BY salary DESC) AS next_higher
+FROM Employees;
+```
+
+For salaries 70000, 60000, 60000, 50000 within one partition:
+
+| salary | `ROW_NUMBER` | `RANK` | `DENSE_RANK` |
+|---|---|---|---|
+| 70000 | 1 | 1 | 1 |
+| 60000 | 2 | 2 | 2 |
+| 60000 | 3 | 2 | 2 |
+| 50000 | 4 | 4 | 3 |
+
+```sql
+-- Top earner in each department
+SELECT * FROM (
+    SELECT e.*, RANK() OVER (PARTITION BY department ORDER BY salary DESC) AS rnk FROM Employees e
+) t WHERE rnk = 1;
+```
+
+## Logical Order of Query Execution
+
+```text
+FROM / JOIN ... ON   →  WHERE  →  GROUP BY  →  HAVING  →  SELECT  →  DISTINCT  →  ORDER BY  →  LIMIT
+```
+
+- Column aliases defined in `SELECT` are visible in `ORDER BY` but **not** in `WHERE` or `HAVING` (in standard SQL).
+- For an **outer join**, a condition in `ON` filters before NULL-padding; the same condition in `WHERE` filters afterwards and can turn the outer join into an inner join.
+
+## Cardinality of Query Results
+
+| Query | Number of rows (tables have *n* and *m* rows) |
+|---|---|
+| `A CROSS JOIN B` | n × m |
+| `A INNER JOIN B` | between 0 and n × m |
+| `A LEFT JOIN B` | at least n |
+| `A FULL OUTER JOIN B` | at least max(n, m) |
+| `A UNION ALL B` | n + m |
+
+## Stored Procedures, Functions and Cursors
+
+```sql
+-- Stored procedure (MySQL syntax)
+DELIMITER //
+CREATE PROCEDURE RaiseSalary(IN dept INT, IN pct DECIMAL(5,2))
+BEGIN
+    UPDATE Employee SET Salary = Salary * (1 + pct / 100) WHERE DeptID = dept;
+END //
+DELIMITER ;
+
+CALL RaiseSalary(3, 10);
+```
+
+| Object | Purpose |
+|---|---|
+| Stored procedure | Reusable server-side logic, called with `CALL`; may change data |
+| Function | Returns a value and can be used inside queries |
+| Cursor | Processes a query result **row by row** inside procedural code (slower than set-based SQL) |
+
+## Solutions to the Practice Questions
+
+```sql
+-- Practice 1
+SELECT name, salary FROM Employees WHERE salary > 40000;
+-- Alice 60000, Eva 50000, Henry 70000  (Bob earns exactly 40000, so he is excluded)
+
+-- Practice 2
+SELECT * FROM Employees ORDER BY salary DESC;
+
+-- Practice 3
+SELECT department, COUNT(*) AS employee_count FROM Employees GROUP BY department;
+-- HR 2, IT 3, Sales 3
+
+-- Practice 4
+SELECT department, COUNT(*) AS employee_count FROM Employees
+GROUP BY department HAVING COUNT(*) >= 3;
+-- IT 3, Sales 3
+
+-- Practice 5
+SELECT department, AVG(salary) AS avg_salary
+FROM Employees
+WHERE salary >= 30000          -- WHERE: keep employees earning at least 30000
+GROUP BY department            -- GROUP BY: one group per department
+HAVING AVG(salary) > 40000     -- HAVING: keep groups whose average exceeds 40000
+ORDER BY avg_salary DESC;      -- ORDER BY: highest average first
+-- IT 56666.67   (HR = 35000; Sales = (50000 + 30000) / 2 = 40000, which is not greater than 40000)
+```
+
 ## Views
 
 A virtual table based on the result of a stored SQL query. Views do not store data themselves (in most cases) but simplify complex queries and add a layer of abstraction and security.
@@ -1264,6 +2023,208 @@ Transactions are ordered based on timestamps, ensuring conflicting operations ex
 ### Deadlock
 A situation where two or more transactions wait indefinitely for locks held by each other. Handled through prevention, detection, and recovery strategies such as wait-die, wound-wait, or timeout mechanisms.
 
+## Schedules
+
+A **schedule** is the order in which the operations of several transactions are executed. Within each transaction the order of operations is preserved.
+
+| Term | Meaning |
+|---|---|
+| Serial schedule | One transaction runs completely before the next begins (always correct) |
+| Non-serial schedule | Operations of different transactions are interleaved |
+| Serializable schedule | Equivalent in effect to **some** serial schedule |
+
+```text
+Number of serial schedules of n transactions            = n!
+Number of all interleavings (Ti has mi operations)     = (m1 + m2 + ... + mn)! / (m1! × m2! × ... × mn!)
+Example: T1 with 3 operations, T2 with 2 operations     = 5! / (3! × 2!) = 10 schedules (2 of them serial)
+```
+
+Notation: `R1(A)` = transaction T1 reads A; `W2(B)` = T2 writes B; `C1` = T1 commits; `A1` = T1 aborts.
+
+## Conflicting Operations
+
+Two operations **conflict** if they belong to **different transactions**, access the **same data item**, and **at least one is a write**.
+
+| Pair | Conflict? | Name |
+|---|---|---|
+| `R1(A)`, `R2(A)` | No | — |
+| `R1(A)`, `W2(A)` | Yes | Read–write |
+| `W1(A)`, `R2(A)` | Yes | Write–read (dirty read) |
+| `W1(A)`, `W2(A)` | Yes | Write–write (lost update risk) |
+
+## Conflict Serializability
+
+Two schedules are **conflict equivalent** if they order every pair of conflicting operations in the same way. A schedule is **conflict serializable** if it is conflict equivalent to a serial schedule.
+
+### Precedence (Serialization) Graph Test
+
+1. Create one node per transaction.
+2. Add an edge `Ti → Tj` whenever an operation of Ti conflicts with a **later** operation of Tj.
+3. The schedule is conflict serializable **if and only if the graph has no cycle**.
+4. A **topological order** of the graph gives an equivalent serial schedule.
+
+**Example 1 (serializable):**
+
+```text
+S1:  R1(A) W1(A) R2(A) W2(A) R1(B) W1(B) R2(B) W2(B)
+Edges: W1(A) before R2(A) → T1→T2;   W1(B) before R2(B) → T1→T2        (no cycle)
+Equivalent serial order: T1, T2
+```
+
+**Example 2 (not serializable):**
+
+```text
+S2:  R1(A) W1(A) R2(A) W2(A) R2(B) W2(B) R1(B) W1(B)
+On A: T1 before T2  →  T1 → T2
+On B: T2 before T1  →  T2 → T1
+Cycle T1 ⇄ T2  →  not conflict serializable
+```
+
+## View Serializability
+
+Schedules S and S′ are **view equivalent** if:
+
+1. Each transaction reads the **initial value** of an item in S exactly when it does in S′.
+2. Each read reads from the **same write** in both schedules (same "reads-from" relation).
+3. The **final write** on each item is by the same transaction.
+
+A schedule is **view serializable** if it is view equivalent to a serial schedule. Testing this is **NP-complete**.
+
+**Example (view serializable but not conflict serializable — it contains blind writes):**
+
+```text
+S:  R1(A)  W2(A)  W1(A)  W3(A)
+Conflict graph: T1→T2 (R1 before W2), T2→T1 (W2 before W1) → cycle → not conflict serializable.
+View equivalent to the serial order T1, T2, T3: T1 reads the initial A, and T3 makes the final write.
+```
+
+```text
+Serial  ⊂  Conflict serializable  ⊂  View serializable  ⊂  All schedules
+```
+
+## Recoverability
+
+| Class | Definition |
+|---|---|
+| **Recoverable** | If Tj reads data written by Ti, then **Ti commits before Tj commits** |
+| **Cascadeless (ACA)** | Tj reads only values written by **already committed** transactions (no dirty reads) |
+| **Strict** | No transaction reads **or overwrites** a value written by another transaction until that one commits or aborts |
+
+```text
+Strict  ⊂  Cascadeless  ⊂  Recoverable  ⊂  All schedules
+```
+
+| Schedule | Classification |
+|---|---|
+| `W1(A) R2(A) C2 C1` | **Not recoverable** (T2 read dirty data and committed first; if T1 aborts, T2's result cannot be undone) |
+| `W1(A) R2(A) C1 C2` | Recoverable, **not** cascadeless (if T1 aborts, T2 must abort too: cascading rollback) |
+| `W1(A) C1 R2(A) C2` | Strict |
+
+Serializability and recoverability are **independent**: a schedule can be serializable yet not recoverable.
+
+## Lock-Based Protocols
+
+| Lock mode | Purpose |
+|---|---|
+| Shared (S) | Read access; many transactions may hold it together |
+| Exclusive (X) | Write access; only one holder |
+
+| Held \ Requested | S | X |
+|---|---|---|
+| S | Granted | Wait |
+| X | Wait | Wait |
+
+A transaction may **upgrade** S to X (and downgrade X to S) when allowed.
+
+### Two-Phase Locking (2PL) and Its Variants
+
+| Protocol | Rule | Guarantees |
+|---|---|---|
+| Basic 2PL | **Growing phase**: only acquire locks. **Shrinking phase**: only release locks. After the first release, no new lock. The point of the last lock is the **lock point**. | Conflict serializable (the serial order is the order of lock points); **not** deadlock free; **not** recoverable by itself |
+| Strict 2PL | Basic 2PL + hold all **exclusive** locks until commit or abort | Conflict serializable **and strict** (no cascading rollbacks) |
+| Rigorous 2PL | Basic 2PL + hold **all** locks (S and X) until commit or abort | Strict; serial order = commit order |
+| Conservative (static) 2PL | Acquire **all** locks before the transaction starts | **Deadlock free** (needs all locks declared in advance) |
+
+```text
+Rigorous 2PL  ⊂  Strict 2PL  ⊂  2PL  ⊂  Conflict serializable
+```
+
+Some conflict-serializable schedules cannot be produced by 2PL.
+
+## Timestamp Ordering Protocol
+
+Each transaction receives a timestamp **TS(T)** when it starts (older = smaller). Each item Q stores **R-TS(Q)** (largest timestamp that read it) and **W-TS(Q)** (largest timestamp that wrote it).
+
+| Operation by T | Rule |
+|---|---|
+| `Read(Q)` | If `TS(T) < W-TS(Q)`: T would read an overwritten value → **reject, roll back T**. Else execute and set `R-TS(Q) = max(R-TS(Q), TS(T))`. |
+| `Write(Q)` | If `TS(T) < R-TS(Q)`: a younger transaction has already read Q → **reject**. If `TS(T) < W-TS(Q)`: T's write is obsolete → **reject** (Basic) — or simply **skip the write** (**Thomas write rule**). Else execute and set `W-TS(Q) = TS(T)`. |
+
+| Property | Timestamp ordering |
+|---|---|
+| Serializability | Conflict serializable in timestamp order (Thomas write rule also admits some view-serializable schedules) |
+| Deadlock | **Deadlock free** (no waiting; transactions are rolled back instead) |
+| Weaknesses | Possible starvation; cascading rollbacks and non-recoverable schedules unless extra rules are added |
+
+## Optimistic (Validation-Based) Concurrency Control
+
+A transaction runs in three phases: **Read** (works on private copies), **Validation** (checks that no conflict occurred with concurrent transactions), **Write** (makes changes visible). If validation fails, the transaction restarts. It works well when conflicts are rare.
+
+## Deadlock Handling in Databases
+
+A **wait-for graph** has an edge `Ti → Tj` if Ti waits for a lock held by Tj. A **cycle means deadlock**.
+
+| Strategy | Technique |
+|---|---|
+| Detection | Build the wait-for graph periodically; if there is a cycle, pick a **victim** (lowest cost, fewest locks, youngest) and roll it back; avoid starving the same victim repeatedly |
+| Prevention (timestamp-based) | **Wait-die** and **wound-wait** (below) |
+| Timeout | Roll back any transaction that waits longer than a limit |
+
+| Scheme | Ti (older) requests lock held by Tj (younger) | Ti (younger) requests lock held by Tj (older) |
+|---|---|---|
+| **Wait-die** (non-preemptive) | Ti **waits** | Ti **dies** (rolls back, restarts with the **same timestamp**) |
+| **Wound-wait** (preemptive) | Ti **wounds** Tj (Tj rolls back) | Ti **waits** |
+
+Because a restarted transaction keeps its original timestamp, it eventually becomes the oldest and cannot starve.
+
+## Multiple Granularity Locking
+
+Data can be locked at different levels: **database → table → page → row**. To avoid scanning every row to find conflicts, **intention locks** are placed on ancestors.
+
+| Mode | Meaning |
+|---|---|
+| IS | Intention to take S locks on some descendants |
+| IX | Intention to take X (or S) locks on some descendants |
+| S | Shared lock on this node and all descendants |
+| SIX | S on the whole subtree plus the intention to X-lock some descendants |
+| X | Exclusive lock on this node and all descendants |
+
+| Held \ Requested | IS | IX | S | SIX | X |
+|---|---|---|---|---|---|
+| **IS** | ✔ | ✔ | ✔ | ✔ | ✘ |
+| **IX** | ✔ | ✔ | ✘ | ✘ | ✘ |
+| **S** | ✔ | ✘ | ✔ | ✘ | ✘ |
+| **SIX** | ✔ | ✘ | ✘ | ✘ | ✘ |
+| **X** | ✘ | ✘ | ✘ | ✘ | ✘ |
+
+**Rules:** lock from the **root downward**, release from the **leaf upward**. To get S or IS on a node you must hold IS or IX on its parent; to get X, IX or SIX you must hold IX or SIX on the parent.
+
+## Multiversion Concurrency Control (MVCC) and Snapshot Isolation
+
+Instead of overwriting, the database keeps **several versions** of each item. A reader sees the snapshot as of the time its transaction started, so **readers never block writers and writers never block readers** (used by PostgreSQL, Oracle, MySQL InnoDB).
+
+- Snapshot isolation prevents dirty reads, non-repeatable reads and (mostly) phantoms, but allows **write skew**: two transactions read overlapping data, each updates a *different* item, and together they break a rule (for example, two doctors both go off call because each saw the other still on call).
+- Old versions must be cleaned up (`VACUUM` in PostgreSQL).
+
+## Locking and Isolation Levels
+
+| Level | Typical implementation |
+|---|---|
+| Read Uncommitted | No read locks |
+| Read Committed | Short read locks (released right after the read), long write locks |
+| Repeatable Read | Long read and write locks on rows |
+| Serializable | Long locks plus **range (predicate) locks** or index-range locks to stop phantoms |
+
 ---
 
 # Database Recovery and Backup
@@ -1275,6 +2236,103 @@ The DBMS maintains logs of every transaction operation. In case of failure, thes
 ## Checkpoints
 
 A point in time recorded in the log where the database state is saved, allowing recovery processes to avoid redoing the entire transaction history from the beginning.
+
+## Classification of Failures
+
+| Failure | Cause | Recovery |
+|---|---|---|
+| Transaction failure | Logical error (bad input), system error (deadlock) | Roll back that transaction (undo) |
+| System crash | Power loss, OS or DBMS crash; memory contents lost, disk intact | Restart recovery using the log (redo and undo) |
+| Disk failure | Media damage | Restore from backup and replay the log |
+
+## Write-Ahead Logging (WAL)
+
+The log is a sequential file of records:
+
+```text
+<T start>   <T, X, old_value, new_value>   <T commit>   <T abort>   <checkpoint L>
+```
+
+**WAL rules:**
+
+1. A log record describing a change must reach **stable storage before** the changed data page is written to disk (this makes **undo** possible).
+2. All log records of a transaction must be on stable storage **before the transaction is declared committed** (this makes **redo** possible).
+
+### Buffer Management Policies
+
+| Policy | Meaning | Consequence |
+|---|---|---|
+| **STEAL** | Dirty pages of uncommitted transactions may be written to disk | Needs **UNDO** |
+| NO-STEAL | Dirty pages stay in memory until commit | No undo needed, but memory pressure |
+| **NO-FORCE** | Pages need not be written to disk at commit | Needs **REDO** |
+| FORCE | All of a transaction's pages are written at commit | No redo needed, but slow commits |
+
+Most systems (including ARIES-based ones) use **STEAL + NO-FORCE**, which is the fastest but needs both undo and redo.
+
+## Deferred vs Immediate Database Modification
+
+| Technique | When the database is updated | Recovery |
+|---|---|---|
+| **Deferred update** | Only after the transaction commits | **REDO only** (no undo; an uncommitted transaction never touched the database) |
+| **Immediate update** | During the transaction, before commit | **UNDO and REDO** |
+
+Redo and undo operations are **idempotent**: repeating them gives the same result, so recovery is safe even if the system crashes again during recovery.
+
+## Recovery with Checkpoints
+
+A **checkpoint** forces all log records and modified buffers to disk and writes `<checkpoint L>` (L = transactions active at that moment). Recovery then needs to look only at the log from the last checkpoint onward.
+
+**Algorithm (immediate update):**
+
+1. Scan the log backwards to the last checkpoint.
+2. **Redo-list**: transactions that **committed** after the checkpoint (plus those in L that committed). **Undo-list**: transactions that started or were active but **never committed**.
+3. Undo the undo-list (backwards, restoring old values), then redo the redo-list (forwards, applying new values).
+
+**Example:**
+
+```text
+1  <T1 start>
+2  <T1, A, 100, 150>
+3  <T2 start>
+4  <T2, B, 200, 250>
+5  <T1 commit>
+6  <checkpoint {T2}>
+7  <T3 start>
+8  <T3, C, 300, 350>
+9  <T2 commit>
+10 <T4 start>
+11 <T4, D, 400, 450>
+        ── crash ──
+```
+
+| Transaction | Status | Action |
+|---|---|---|
+| T1 | Committed before the checkpoint | Nothing (already on disk) |
+| T2 | Active at checkpoint, committed afterward | **Redo** (B = 250) |
+| T3 | Started after checkpoint, no commit | **Undo** (C = 300) |
+| T4 | Started after checkpoint, no commit | **Undo** (D = 400) |
+
+## ARIES (Algorithm for Recovery and Isolation Exploiting Semantics)
+
+ARIES is the recovery method used by most commercial systems. It relies on **STEAL + NO-FORCE** and **fuzzy checkpoints** (the system keeps running during the checkpoint).
+
+| Concept | Meaning |
+|---|---|
+| LSN | Log Sequence Number: a unique increasing id for every log record |
+| pageLSN | LSN of the latest log record applied to a page; a redo is applied only if `pageLSN < record LSN` |
+| Dirty Page Table | Pages modified in memory but not yet written, with the LSN where each became dirty |
+| Transaction Table | Active transactions and their last LSN |
+| CLR | Compensation Log Record: logs an undo action so that undo is never repeated |
+
+**Three phases after a crash:**
+
+1. **Analysis**: scan forward from the last checkpoint to rebuild the dirty page table and the set of transactions that were active at the crash (the "losers").
+2. **Redo**: **repeat history** — scan forward from the earliest LSN in the dirty page table and reapply every logged update (even those of loser transactions) whose page is not yet up to date.
+3. **Undo**: roll back the loser transactions, going backwards through the log, writing a CLR for each undone update.
+
+## Shadow Paging
+
+The database is a set of pages reached through a **page table**. A transaction works on a **copy** of the page table and writes modified pages to new locations (**shadow copy** stays untouched). On commit, the current page table pointer is switched atomically; on a crash or abort the old table is simply used. It needs no log and no undo or redo, but it fragments the disk, makes copying costly, and does not support concurrent transactions well.
 
 ## Types of Backup
 
@@ -1307,6 +2365,298 @@ Balanced tree structures widely used for indexing, allowing efficient insertion,
 
 ### Hash Index
 Uses a hash function to map keys to bucket locations, offering very fast equality lookups but no support for range queries.
+
+## Disk Storage Basics
+
+Data lives on disk in fixed-size **blocks** (pages), and the block is the unit of transfer between disk and memory. Database performance is measured mainly by the **number of block accesses**.
+
+```text
+Disk access time  =  seek time  +  rotational latency  +  transfer time
+```
+
+| Component | Meaning |
+|---|---|
+| Seek time | Time to move the head to the correct track |
+| Rotational latency | Waiting for the sector to rotate under the head; average = half a rotation |
+| Transfer time | Time to read the block once it is under the head |
+
+**Example:** a 7200 RPM disk makes one rotation in 60/7200 s = 8.33 ms, so the average rotational latency is **4.17 ms**.
+
+### Records and Blocks
+
+```text
+Blocking factor      bfr = ⌊ B / R ⌋          B = block size, R = record size (fixed-length)
+Blocks needed        b   = ⌈ r / bfr ⌉        r = number of records
+```
+
+- **Unspanned** records never cross a block boundary (the unused tail of a block is wasted).
+- **Spanned** records may continue into the next block (no waste, but more complex).
+
+**Example:** R = 100 bytes, B = 1024 bytes → bfr = ⌊1024/100⌋ = 10. For r = 30,000 records, b = 3,000 blocks.
+
+## File Organizations and Their Cost
+
+Costs below are in **block accesses** for a file of *b* blocks.
+
+| Organization | Search by key (equality) | Range search | Insert | Delete / Update |
+|---|---|---|---|---|
+| Heap (unordered) | b/2 on average, b worst | b | 1–2 (append to last block) | search + 1 |
+| Sorted (sequential) on the search key | ⌈log₂ b⌉ (binary search) | ⌈log₂ b⌉ + blocks in the range | Expensive (shift records) or use an overflow area | search + 1 (may leave gaps) |
+| Hashed on the search key | ≈ 1 | b (hash does not preserve order) | ≈ 1 | ≈ 1 |
+| Clustered | Good for joins of the clustered tables | — | — | — |
+
+## Indexes
+
+An **index** is a small ordered file of `(search-key value, pointer)` entries that lets the system find records without scanning the whole data file.
+
+### Dense and Sparse Indexes
+
+| Type | Entries | Notes |
+|---|---|---|
+| Dense | One entry for **every record** (every search-key value) | Faster lookup, more space, works on unordered files |
+| Sparse | One entry for **every block** (the first key of each block) | Smaller; needs the data file to be **sorted** on the key |
+
+### Primary, Clustering and Secondary Indexes
+
+| Index | Built on | Data file ordered on that field? | Density | Entries |
+|---|---|---|---|---|
+| Primary | Ordering **key** field (unique) | Yes | Sparse | One per data **block** (*b*) |
+| Clustering | Ordering **non-key** field | Yes | Sparse (one per distinct value) | One per distinct value |
+| Secondary | Any non-ordering field | No | **Dense** | One per record (*r*) (or per distinct value plus a bucket of pointers) |
+
+A file can have **at most one primary or clustering index** (the data can be physically sorted only one way) but **many secondary indexes**.
+
+### Worked Example: Index Size and Search Cost
+
+Given: r = 30,000 records, R = 100 bytes, B = 1024 bytes, search key 9 bytes, block pointer 6 bytes.
+
+```text
+Data file:       bfr = ⌊1024/100⌋ = 10        b = 30,000 / 10 = 3,000 blocks
+Index entry size = 9 + 6 = 15 bytes           index blocking factor = ⌊1024/15⌋ = 68
+
+Primary index (sparse, one entry per data block):
+    entries = 3,000          index blocks = ⌈3000 / 68⌉ = 45
+    search with binary search on the index = ⌈log₂ 45⌉ + 1 data block = 6 + 1 = 7 accesses
+    (without the index: ⌈log₂ 3000⌉ = 12 accesses on the sorted file, or ~1500 on a heap)
+
+Secondary index (dense, one entry per record):
+    entries = 30,000         index blocks = ⌈30000 / 68⌉ = 442
+    search = ⌈log₂ 442⌉ + 1 = 9 + 1 = 10 accesses   (heap file would need ~1500 on average)
+```
+
+### Multilevel Index
+
+The first-level index is itself a sorted file, so a sparse index can be built on it, and again, until the top level fits in one block. Each extra level divides the number of blocks by the **fan-out** (here 68).
+
+```text
+Level 1: 45 blocks   →  Level 2: ⌈45 / 68⌉ = 1 block (top level)
+Search cost = number of index levels + 1 data block = 2 + 1 = 3 accesses
+Levels = ⌈ log_fo (number of first-level blocks) ⌉ + 1
+```
+
+A multilevel index with a fixed structure is **ISAM**. Its weakness: insertions fill overflow chains because the structure is static. **B-trees and B+ trees** fix this by balancing themselves.
+
+---
+
+## B-Tree
+
+A **B-tree of order m** is a balanced multiway search tree:
+
+| Property | Rule |
+|---|---|
+| Maximum children of a node | m |
+| Maximum keys of a node | m − 1 |
+| Minimum children of an internal node (not the root) | ⌈m/2⌉ |
+| Minimum keys of a non-root node | ⌈m/2⌉ − 1 |
+| Root | At least 2 children (if not a leaf), at least 1 key |
+| Leaves | All at the **same level** |
+| Keys in a node | Sorted; a node with *k* keys has *k + 1* children |
+| Data pointers | Every key (in **any** node, internal or leaf) carries a record pointer |
+
+**Search:** start at the root, find the key or the child interval, descend. Cost ≤ height.
+
+**Insertion:**
+
+1. Find the correct leaf and insert the key in sorted position.
+2. If the node now has *m* keys (overflow), **split** it: the **median key moves up** to the parent; the left and right halves become two nodes.
+3. If the parent overflows, repeat upward. If the root splits, a new root is created and the tree grows by one level.
+
+**Deletion:** delete the key (if it is in an internal node, replace it with its in-order predecessor or successor from a leaf, then delete that). If a node falls below the minimum, **borrow** a key through the parent from a sibling that has spare keys, otherwise **merge** with a sibling (pulling the separating key down from the parent). Merging can cascade upward.
+
+### Example: Inserting 10, 20, 30, 40, 50, 60, 70 into a B-tree of order 3 (at most 2 keys per node)
+
+```text
+10, 20           [10 20]
+30   overflow → median 20 moves up                [20]
+                                                 /    \
+                                              [10]    [30]
+40, 50 → [30 40 50] overflows → 40 moves up      [20 40]
+                                                 /  |   \
+                                              [10] [30] [50]
+60               [50 60]
+70 → [50 60 70] overflows → 60 up → [20 40 60] overflows → 40 up → new root
+
+                         [40]
+                       /      \
+                    [20]       [60]
+                    /  \       /  \
+                 [10] [30]  [50] [70]
+```
+
+### Capacity of a B-Tree Node
+
+If a node holds *m* child pointers (size P), *m − 1* keys (size V) and *m − 1* record pointers (size Pr):
+
+```text
+m × P + (m − 1) × (V + Pr)  ≤  B
+```
+
+**Example:** B = 512, P = 8, V = 10, Pr = 8 → 8m + 18(m − 1) ≤ 512 → 26m ≤ 530 → **m = 20**.
+
+---
+
+## B+ Tree
+
+A **B+ tree** is the standard index structure of relational databases. It differs from a B-tree in two key ways:
+
+- **Internal nodes store only keys and child pointers** (a guide for searching). **All record pointers live in the leaves.**
+- **Every key appears in a leaf**, and the leaves are **linked in sorted order**, giving fast range scans.
+
+| Property (order *p* = max children of an internal node) | Rule |
+|---|---|
+| Internal node | At most *p* children and *p − 1* keys; at least ⌈p/2⌉ children (root: at least 2) |
+| Leaf node | At most *p − 1* keys with record pointers, plus one pointer to the next leaf; at least ⌈(p − 1)/2⌉ keys |
+| All leaves | At the same depth |
+
+### Node Capacity Formulas
+
+```text
+Internal node:   p × P + (p − 1) × V  ≤  B          →   p = ⌊ (B + V) / (P + V) ⌋
+Leaf node:       p_leaf × (V + Pr) + P  ≤  B        →   p_leaf = ⌊ (B − P) / (V + Pr) ⌋
+```
+
+P = block (tree) pointer size, V = key size, Pr = record pointer size.
+
+**Example:** B = 512, V = 10, P = 8, Pr = 8.
+
+```text
+Internal order  p      = ⌊(512 + 10) / (8 + 10)⌋ = ⌊522 / 18⌋ = 29      (29×8 + 28×10 = 512)
+Leaf capacity   p_leaf = ⌊(512 − 8) / 18⌋       = 28 keys
+(For the same block, a B-tree node would hold only 20 pointers — a B+ tree has a higher fan-out and is shorter.)
+```
+
+### Number of Records Indexed by a B+ Tree
+
+For *h* levels (root = level 1) and order *p*:
+
+```text
+Maximum records  =  p^(h−1) × (p − 1)
+Minimum records  =  2 × ⌈p/2⌉^(h−2) × ⌈(p − 1)/2⌉       (root has 2 children; others half full)
+```
+
+With p = 29, h = 3: maximum = 29² × 28 = **23,548** keys; minimum = 2 × 15 × 14 = **420** keys.
+
+**Search cost:** *h* block accesses to reach the leaf, plus 1 to fetch the record (for a non-clustered index). **Range query:** one search, then follow leaf links.
+
+### Insertion
+
+1. Descend to the leaf and insert the key in order.
+2. If the leaf overflows, **split** it into two halves. The **smallest key of the right half is copied up** to the parent (the key **stays** in the leaf).
+3. If an internal node overflows, split it; here the **middle key moves up** (it is removed from the node being split).
+4. If the root splits, the height grows by one.
+
+**Example (order 4: a leaf holds up to 3 keys, an internal node up to 3 keys):** insert 5, 15, 25, 35, 45, 55, 65, 75, 85, 95.
+
+```text
+5, 15, 25        leaf [5 15 25]
+35               overflow → [5 15] [25 35]      copy 25 up         root [25]
+45               [25 35 45]
+55               overflow → [25 35] [45 55]     copy 45 up         root [25 45]
+65, 75           [45 55 65 75] overflow → [45 55] [65 75]  copy 65 up   root [25 45 65]
+85               [65 75 85]
+95               [65 75 85 95] overflow → [65 75] [85 95]  copy 85 up
+                 root [25 45 65 85] has 4 keys → internal split; the 3rd key (65) moves up
+                 (some textbooks move the 2nd key instead; both are valid, so follow the rule given)
+
+                               [ 65 ]
+                        /                \
+                 [ 25 | 45 ]              [ 85 ]
+                 /     |     \             /    \
+          [5 15]→[25 35]→[45 55]  →  [65 75]→[85 95]       (leaves linked left to right)
+```
+
+### Deletion
+
+1. Remove the key from its leaf.
+2. If the leaf now has fewer than the minimum keys, **borrow** from a sibling that has more than the minimum (and fix the parent's separator), or **merge** with a sibling and delete the separator from the parent.
+3. A merge can cascade upward; if the root is left with one child, the tree shrinks by one level.
+
+In the tree above, deleting 35 leaves the leaf `[25]`, below the minimum of 2 keys. Its left sibling `[5 15]` has only the minimum and cannot lend, so the two merge into `[5 15 25]`, and the separator 25 is removed from the parent (which becomes `[45]`).
+
+> A key that has been deleted from a leaf can remain in an internal node as a separator; that is harmless because internal keys are only guides.
+
+## B-Tree vs B+ Tree
+
+| Aspect | B-Tree | B+ Tree |
+|---|---|---|
+| Record pointers | In every node | **Only in leaves** |
+| Keys repeated? | Each key appears once | Internal keys are repeated in leaves |
+| Fan-out | Smaller | **Larger** (more keys per internal node) |
+| Height | Taller | Shorter |
+| Range queries | Need in-order traversal | **Fast** via the linked leaves |
+| Search time | Can end at an internal node | Always goes to a leaf (same cost every time) |
+| Use | Some file systems | **Relational databases (MySQL InnoDB, PostgreSQL, Oracle, SQL Server)** |
+
+## Hashing
+
+### Static Hashing
+
+A hash function maps a key to one of *M* **buckets** (each bucket is a block): `h(K) = K mod M`.
+
+| Issue | Handling |
+|---|---|
+| Collision (bucket full) | **Overflow chaining**: link extra blocks to the bucket; or open addressing (linear probing) |
+| Fixed number of buckets | Performance degrades as the file grows (long overflow chains); the only fix is to rehash everything |
+| Range queries | **Not supported** (hashing destroys order) |
+
+Cost for an equality search ≈ 1 block (plus overflow blocks).
+
+### Dynamic Hashing
+
+**Extendible hashing** uses a **directory** of 2^d bucket pointers, where *d* is the **global depth** (number of hash bits used). Each bucket has a **local depth** *d'* ≤ *d*.
+
+- On bucket overflow: if *d' < d*, split just that bucket (increase its local depth) and update the directory pointers.
+- If *d' = d*, **double the directory** (d becomes d + 1), then split the bucket.
+
+**Example (bucket capacity 2, using the low-order bits of the key):** insert 4 (100), 6 (110), 8 (1000), 12 (1100).
+
+```text
+Start: d = 1.  Bucket "0" holds the even keys, bucket "1" the odd keys.
+Insert 4, 6          → bucket 0 = [4, 6]  (full)
+Insert 8             → overflow, d' = d = 1 → double the directory to d = 2 (00, 01, 10, 11)
+                       split by the last 2 bits:  4 (00), 8 (00) → bucket 00 = [4, 8];  6 (10) → bucket 10 = [6]
+                       entries 01 and 11 still share the odd bucket (local depth 1)
+Insert 12 (…00)      → bucket 00 = [4, 8] overflows, d' = d = 2 → double to d = 3
+                       last 3 bits: 4 (100), 12 (100) → bucket 100 = [4, 12];  8 (000) → bucket 000 = [8]
+```
+
+**Linear hashing** needs no directory: buckets are split in a fixed round-robin order (a "split pointer" moves through the buckets) whenever the load factor exceeds a threshold, using a pair of hash functions `h_i(K) = K mod (2^i × N)` and `h_{i+1}`.
+
+| Aspect | Static hashing | Extendible hashing | Linear hashing |
+|---|---|---|---|
+| Growth | Poor | Directory doubles | Smooth, one bucket at a time |
+| Extra structure | None | Directory | Split pointer |
+| Overflow chains | Long | Rare | Short |
+
+## Choosing an Index
+
+| Need | Best choice |
+|---|---|
+| Equality and range queries, ordering | B+ tree |
+| Equality only, very fast | Hash index |
+| Many duplicate values in a column | Clustering index or bitmap index |
+| Query answered entirely from the index | **Covering index** (all selected columns are in the index) |
+| Multi-column filter | **Composite index**; it helps queries that use its **leftmost prefix** |
 
 ---
 
@@ -2744,6 +4094,90 @@ Restricts the values that can be stored in a column to a specific data type, ran
 ## Check Constraints
 User-defined rules that restrict the values that can be entered into a column beyond basic data type restrictions.
 
+## Declaring Constraints in SQL
+
+```sql
+CREATE TABLE Employee (
+    EmpID    INT           PRIMARY KEY,                       -- UNIQUE + NOT NULL
+    Email    VARCHAR(100)  UNIQUE NOT NULL,
+    Name     VARCHAR(50)   NOT NULL,
+    Age      INT           CHECK (Age BETWEEN 18 AND 65),
+    Salary   DECIMAL(10,2) DEFAULT 30000 CHECK (Salary >= 0),
+    DeptID   INT,
+    CONSTRAINT fk_dept FOREIGN KEY (DeptID) REFERENCES Department(DeptID)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE
+);
+```
+
+| Constraint | Enforces | NULLs allowed? |
+|---|---|---|
+| `PRIMARY KEY` | Entity integrity: unique and never NULL; one per table | No |
+| `UNIQUE` | No duplicate values (alternate keys) | Yes (usually) |
+| `NOT NULL` | A value must be supplied | No |
+| `CHECK` | A condition on the row | Condition decides |
+| `DEFAULT` | Value used when none is supplied | — |
+| `FOREIGN KEY` | Referential integrity | Yes (a NULL foreign key references nothing) |
+
+A foreign key must reference a **primary key or unique key** of the parent table. It may reference its own table (e.g., `ManagerID` → `EmpID`).
+
+## Referential Actions
+
+What happens to child rows when a referenced parent row is deleted or its key is updated:
+
+| Action | Behaviour |
+|---|---|
+| `NO ACTION` / `RESTRICT` | Reject the operation if child rows exist (default) |
+| `CASCADE` | Delete (or update) the child rows too |
+| `SET NULL` | Set the child's foreign key to NULL (column must be nullable) |
+| `SET DEFAULT` | Set the child's foreign key to its default value |
+
+## Which Operations Can Violate Which Constraint
+
+Consider a foreign key from a **child** (referencing) table to a **parent** (referenced) table:
+
+| Operation | Domain / NOT NULL | Key / Entity integrity | Referential integrity |
+|---|---|---|---|
+| Insert into **parent** | Possible | Possible (duplicate or NULL key) | **Cannot violate** |
+| Insert into **child** | Possible | Possible | Possible (parent key missing) |
+| Delete from **parent** | — | — | Possible (child rows still point to it) |
+| Delete from **child** | — | — | **Cannot violate** |
+| Update the **key** of the parent | Possible | Possible | Possible (children orphaned) |
+| Update the **foreign key** of the child | Possible | — | Possible (new value has no parent) |
+
+**Remember:** insert and update checks happen on the **child**; delete checks (and key-update checks) happen on the **parent**.
+
+## Deferred Constraint Checking
+
+By default constraints are checked at the end of each statement. A constraint declared `DEFERRABLE INITIALLY DEFERRED` (PostgreSQL, Oracle) is checked only at `COMMIT`, which allows circular references or temporary violations inside a transaction.
+
+## Constraints Beyond Declarative Ones: Assertions and Triggers
+
+A **trigger** runs automatically when an `INSERT`, `UPDATE` or `DELETE` happens (the event-condition-action model). It can enforce business rules that `CHECK` cannot express.
+
+```sql
+CREATE TRIGGER trg_salary_audit
+AFTER UPDATE ON Employee
+FOR EACH ROW
+BEGIN
+    IF NEW.Salary < OLD.Salary THEN
+        INSERT INTO SalaryAudit(EmpID, OldSalary, NewSalary, ChangedAt)
+        VALUES (OLD.EmpID, OLD.Salary, NEW.Salary, NOW());
+    END IF;
+END;
+```
+
+| Trigger Feature | Options |
+|---|---|
+| Timing | `BEFORE` (can modify or reject the new row) or `AFTER` |
+| Event | `INSERT`, `UPDATE`, `DELETE` |
+| Granularity | `FOR EACH ROW` or once per statement |
+| Row values | `OLD` (before change), `NEW` (after change) |
+
+The SQL standard also defines `CREATE ASSERTION` (a condition over the whole database), but few systems implement it; triggers are used instead.
+
+**Pattern to solve constraint questions:** if the rule involves one row → `CHECK`; one column's uniqueness → `UNIQUE`; relationship to another table → `FOREIGN KEY`; a rule across several rows or tables → trigger (or application logic).
+
 ---
 
 # OLTP vs OLAP
@@ -3516,3 +4950,141 @@ LIMIT 20 OFFSET 0;
 **Scenario:** An e-commerce application needs to store product catalog data with varying attributes per category, and also needs fast shopping-cart sessions and a "recently viewed items" list per user.
 
 **Answer:** Use both, each for the job it does best. **MongoDB** is the primary store for the product catalog because documents handle varying attributes naturally and support rich queries and indexes. **Redis** handles the shopping-cart session (a Hash with a TTL) and the "recently viewed" list (a List with `LPUSH` + `LTRIM`) because these are small, hot, short-lived data needing sub-millisecond access. Redis can also cache frequently requested catalog pages in front of MongoDB. MongoDB remains the durable source of truth.
+
+---
+
+## Question 19: Is This Schedule Serializable?
+
+**Scenario:** Three transactions run as `R1(X) R2(Y) W1(Y) R3(X) W2(X) W3(Y)`. Is the schedule conflict serializable?
+
+**Answer:** Build the precedence graph by checking each pair of conflicting operations.
+
+- Item X: `R1(X)` before `W2(X)` gives **T1 → T2**; `R3(X)` before `W2(X)` gives **T3 → T2**.
+- Item Y: `R2(Y)` before `W1(Y)` gives **T2 → T1**; `R2(Y)` before `W3(Y)` gives **T2 → T3**; `W1(Y)` before `W3(Y)` gives **T1 → T3**.
+
+The edges T1 → T2 and T2 → T1 form a cycle, so the schedule is **not conflict serializable**. If the graph had been acyclic, a topological ordering would give the equivalent serial order.
+
+---
+
+## Question 20: Highest Normal Form of a Relation
+
+**Scenario:** R(A, B, C, D, E) has the dependencies A → B, BC → E, ED → A. Find the candidate keys and the highest normal form.
+
+**Answer:** C and D never appear on a right-hand side, so they are in every key. `CD⁺ = {C, D}` is not enough, so add one more attribute:
+
+- `ACD⁺`: A→B gives B; BC→E gives E → all attributes. ✔
+- `BCD⁺`: BC→E gives E; ED→A gives A → all attributes. ✔
+- `CDE⁺`: ED→A gives A; A→B gives B → all attributes. ✔
+
+Candidate keys: **ACD, BCD, CDE**. Every attribute is prime, so the relation is in **3NF** (the condition "A is prime" is always met). It is **not in BCNF** because, for example, `A → B` has a left side (A) that is not a super key. The highest normal form is **3NF**.
+
+---
+
+## Question 21: Levels of a B+ Tree
+
+**Scenario:** An index on a 1,000,000-record file uses blocks of 1024 bytes, 12-byte keys, 8-byte block pointers and 8-byte record pointers. How many levels does the B+ tree have?
+
+**Answer:**
+
+```text
+Internal order  p      = ⌊(B + V) / (P + V)⌋ = ⌊(1024 + 12) / (8 + 12)⌋ = ⌊1036 / 20⌋ = 51
+Leaf capacity   p_leaf = ⌊(B − P) / (V + Pr)⌋ = ⌊(1024 − 8) / 20⌋          = ⌊1016 / 20⌋ = 50 keys
+```
+
+- **Best case (all nodes full):** leaves = 1,000,000 / 50 = 20,000 → parents = ⌈20000/51⌉ = 393 → ⌈393/51⌉ = 8 → root = 1. Total **4 levels**.
+- **Worst case (nodes half full):** leaf holds ≥ 25 keys → 40,000 leaves; internal fan-out ≥ ⌈51/2⌉ = 26 → ⌈40000/26⌉ = 1539 → ⌈1539/26⌉ = 60 → ⌈60/26⌉ = 3 → root = 1. Total **5 levels**.
+
+A lookup therefore costs **4 to 5 index-block reads plus 1 data-block read**, far fewer than the ~20,000 blocks of a full scan.
+
+---
+
+## Question 22: Aborting After Another Transaction Has Read Dirty Data
+
+**Scenario:** T1 updates a balance, T2 reads that balance and commits, and then T1 aborts. What goes wrong and how is it prevented?
+
+**Answer:** The schedule `W1(A) R2(A) C2 A1` is **not recoverable**: T2 committed a result based on data that T1's rollback removes, and a committed transaction cannot be undone. Even the recoverable variant (T2 commits after T1) can force **cascading rollbacks**. The fix is to allow only **cascadeless or strict schedules**, which is exactly what **Strict 2PL** does: T1 keeps its exclusive lock on A until it commits or aborts, so T2 cannot read the uncommitted value. Using the isolation level **Read Committed** or higher also prevents the dirty read.
+
+---
+
+## Question 23: Wait-Die vs Wound-Wait
+
+**Scenario:** T1 (timestamp 5), T2 (timestamp 10) and T3 (timestamp 15) compete for item X, which T2 currently holds. T1 and then T3 request X. What happens under each scheme?
+
+**Answer:**
+
+| Request | Wait-die | Wound-wait |
+|---|---|---|
+| T1 (older, TS 5) requests X held by T2 (younger) | T1 **waits** | T1 **wounds** T2: T2 is rolled back and T1 gets X |
+| T3 (younger, TS 15) requests X held by T2 (older than T3) | T3 **dies** (rolls back and restarts with TS 15) | T3 **waits** |
+
+In wait-die the **younger** transaction is always the one that rolls back when it would wait for an older one; in wound-wait an **older** transaction preempts the younger. Both prevent cycles because waiting always goes in one direction of age, and neither starves a transaction because restarts keep the original timestamp.
+
+---
+
+## Question 24: Counting Super Keys
+
+**Scenario:** R(A, B, C, D, E) has exactly two candidate keys: {A} and {B, C}. How many super keys does R have?
+
+**Answer:** Count the supersets of each key and subtract the overlap (inclusion–exclusion):
+
+- Supersets of {A}: 2⁴ = 16
+- Supersets of {B, C}: 2³ = 8
+- Supersets of both ({A, B, C}): 2² = 4
+
+Total = 16 + 8 − 4 = **20** super keys.
+
+---
+
+## Question 25: Customers Who Bought Every Product
+
+**Scenario:** `Purchase(customer_id, product_id)` and `Product(product_id)` tables exist. Write a query for customers who bought **every** product.
+
+**Answer:** This is relational **division**. Either use a counting approach or a double `NOT EXISTS`:
+
+```sql
+SELECT customer_id
+FROM Purchase
+GROUP BY customer_id
+HAVING COUNT(DISTINCT product_id) = (SELECT COUNT(*) FROM Product);
+
+-- Equivalent: there is no product that the customer did NOT buy
+SELECT DISTINCT p.customer_id
+FROM Purchase p
+WHERE NOT EXISTS (
+    SELECT 1 FROM Product pr
+    WHERE NOT EXISTS (
+        SELECT 1 FROM Purchase p2
+        WHERE p2.customer_id = p.customer_id AND p2.product_id = pr.product_id
+    )
+);
+```
+
+In relational algebra the same query is `π customer_id, product_id (Purchase) ÷ π product_id (Product)`.
+
+---
+
+## Question 26: Timestamp Ordering in Action
+
+**Scenario:** T1 has timestamp 10 and T2 has timestamp 20. The operations execute in the order `R2(A)`, `W1(A)`, `R1(B)`. What does the timestamp ordering protocol do?
+
+**Answer:** After `R2(A)`, `R-TS(A) = 20`. When T1 then tries `W1(A)`, the check `TS(T1) = 10 < R-TS(A) = 20` fails: a younger transaction has already read A, so allowing an older transaction's write would break timestamp order. T1 is **rolled back and restarted with a new timestamp**, and its later `R1(B)` is not executed in this attempt. No deadlock is possible because transactions never wait.
+
+---
+
+## Question 27: Restart Recovery After a Crash
+
+**Scenario:** The log contains `<T1 start>`, `<T1, X, 5, 8>`, `<T1 commit>`, `<checkpoint {}>`, `<T2 start>`, `<T2, Y, 10, 20>`, `<T3 start>`, `<T3, Z, 1, 2>`, `<T2 commit>`, and then the system crashes. What does recovery do under immediate update?
+
+**Answer:** T1 committed **before** the checkpoint, so its changes are already on disk and it is ignored. T2 committed after the checkpoint, so it goes to the **redo-list** (set Y = 20). T3 never committed, so it goes to the **undo-list** (restore Z = 1). Recovery undoes T3 first, then redoes T2. Because both operations are idempotent, a second crash during recovery is harmless.
+
+---
+
+## Question 28: Choosing the Right Index
+
+**Scenario:** A table of 20 million orders is queried in three ways: (a) `WHERE order_id = 7781`, (b) `WHERE order_date BETWEEN '2026-01-01' AND '2026-03-31'`, and (c) `WHERE status = 'SHIPPED'`, where `status` has only four distinct values. Which index suits each query?
+
+**Answer:**
+
+- (a) Equality on a unique key: the **primary key B+ tree** (a hash index would also work, but the B+ tree already exists).
+- (b) A **range** query: a **B+ tree on `order_date`**; the linked leaves give fast sequential access to the range. A hash index would not work because it does not preserve order.
+- (c) A very **low-cardinality** column: a normal B+ tree is of little help because each value matches millions of rows. Better options are a **bitmap index** (in systems that support it), a **partial or composite index** such as `(status, order_date)` combined with another selective condition, or no index at all if the query always returns a large share of the table (a sequential scan is then cheaper).
