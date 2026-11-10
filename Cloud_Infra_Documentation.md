@@ -4,11 +4,100 @@ This is a reference for the concepts used across this project's infrastructure: 
 
 ---
 
-## Cloud Computing & Networking Fundamentals
+## Cloud Computing Fundamentals
 
-### Server and Client
+### Servers and Clients
 
 A **server** is a computer whose job is to sit there and respond to requests — serve a webpage, return data from a database, process a payment. A **client** is whatever is asking (a browser, a mobile app, another server). "The cloud" is simply someone else's servers (AWS's or Azure's, in this project's case) that you rent instead of buying and running yourself.
+
+### Public, Private and Hybrid Cloud
+
+- **Public cloud** — infrastructure owned by a third party (AWS, Azure, GCP) and shared across customers, rented on demand.
+- **Private cloud** — infrastructure dedicated to one organization, on-premises or hosted.
+- **Hybrid cloud** — a mix of both, connected via VPN or a dedicated link.
+
+**Project usage:** this project deliberately supports both a "private"-style local cluster (Minikube/Kind/K3s/MicroK8s, no cloud dependency) and true public-cloud deployments (EKS via Terraform, AKS via Pulumi) from the same Kubernetes manifests, selected purely by which overlay `deploy_kubernetes.sh`/ArgoCD applies.
+
+### Service Models — IaaS, PaaS, SaaS
+
+- **IaaS** — raw, virtualized building blocks (EC2/Azure VMs, VPC/VNet, EBS/managed disks) over the internet; you manage the OS, runtime and app.
+- **PaaS** — a ready-to-use framework; the provider manages infrastructure and runtime so you focus on code (Elastic Beanstalk/App Runner; Azure App Service, Azure Functions).
+- **SaaS** — a fully finished application you just use (AWS WorkMail; Microsoft 365).
+
+EKS/RDS and AKS/PostgreSQL Flexible Server all sit closer to the "managed" end — the provider runs the control plane/DB engine, you manage configuration and workloads on top.
+
+### Managed Services
+
+A managed service means the cloud provider operates the underlying infrastructure for you — patching the OS, replacing failed hardware, handling backups, scaling the engine — instead of you doing it yourself on a raw VM. "Managed" doesn't mean "no configuration"; the *operational burden* shifts from you to the provider. This is the biggest cost/control trade-off behind every choice in this project: EKS vs self-managed Kubernetes, RDS vs a self-hosted Postgres, Azure PostgreSQL Flexible Server vs a StatefulSet.
+
+**Project usage:** production overlays (`overlays/prod`, `overlays/prod-azure`) delete the in-cluster `postgres` StatefulSet entirely (see the `$patch: delete` blocks in their `kustomization.yaml`) in favor of the managed database (RDS or Azure PostgreSQL Flexible Server) — the local overlay keeps the StatefulSet because there is no managed DB to fall back to.
+
+### Provisioning
+
+Provisioning means creating and setting up a resource so it's ready to use — e.g., "provisioning an EC2 instance" or "provisioning an AKS cluster" means the cloud allocating the actual compute and handing it to you.
+
+### Physical Servers, Virtual Machines and Virtualization
+
+A physical server is one real computer. A **virtual machine** is a software-based simulation of a computer running on top of a physical machine, sharing its hardware with other VMs via a **hypervisor**. This carving of one physical machine into many independent virtual ones is **virtualization** — the foundational trick that makes cloud computing possible. An EC2 instance or an Azure VM is a VM on some physical host the provider manages; you never see or choose the physical hardware.
+
+### CAPEX vs OPEX
+
+Before cloud computing, a company bought physical servers, guessed capacity years in advance, and paid full price whether they were busy or idle — a large **CAPEX**. Cloud computing turns this into **OPEX** — rent by the hour/second, scale within minutes, stop paying the moment you stop using a resource, at a premium versus owning hardware outright at large scale.
+
+### Scalability and Elasticity
+
+#### Scalability vs Elasticity
+
+- **Scalability** — the ability to handle more load by adding resources; can be manual.
+- **Elasticity** — scalability that happens *automatically* in response to demand, and scales back down automatically (Auto Scaling Groups/VM Scale Sets, HPA, Lambda/Azure Functions Consumption plan). Elasticity is what makes "pay only for what you use" actually true.
+
+**Project usage:** `hpa.yaml` and its per-overlay patches scale the app's pod count automatically; `eks.tf`'s managed node group and the Azure Pulumi program's AKS `agent_pool_profiles` both set `enable_auto_scaling`/`min_count`/`max_count` so node capacity itself is elastic too.
+
+#### Horizontal vs Vertical Scaling
+
+**Vertical scaling** ("scale up") makes one server bigger — simple, but has a hard ceiling and usually needs downtime to resize. **Horizontal scaling** ("scale out") adds more servers to share the load — no real ceiling, no downtime, but requires a load balancer to distribute traffic.
+
+**Project usage:** `hpa.yaml` and the AKS/EKS node-group autoscaling settings are both horizontal-scaling mechanisms; nothing in this project relies on vertical scaling at runtime.
+
+### Pets vs Cattle, Mutable vs Immutable Infrastructure
+
+- **Pets**: hand-built, named, repaired when sick (`web01`). **Cattle**: identical, disposable, replaced when sick (an Auto Scaling Group instance, a Kubernetes pod).
+- **Mutable**: SSH in and patch the running server (config drift builds up). **Immutable**: never modify a running server. Build a new image/container, roll it out, destroy the old one. Everything in this project (containers, Terraform/Pulumi, GitOps) pushes toward immutable.
+- Rule: if you can't rebuild it from code in minutes, it's a pet. Pets are where outages and "works on my machine" live.
+
+### The Twelve-Factor App
+
+What a cloud-ready app looks like:
+
+| Factor | Practice | In this project |
+| --- | --- | --- |
+| Config | Env vars, not code | `configmap.yaml`, `secrets.yaml` |
+| Backing services | Attached by URL/credentials | RDS/PostgreSQL via endpoint env vars |
+| Processes | **Stateless**, share-nothing; state goes to a DB/object store | App pod local SQLite is the exception (hence `sessionAffinity: ClientIP`) |
+| Port binding | App listens on a port itself | `containerPort` + Service |
+| Concurrency | Scale out with more processes | HPA 2–10 replicas |
+| Disposability | Fast start, **graceful shutdown on `SIGTERM`** | Probes + rolling update |
+| Dev/prod parity | Same image everywhere | Kustomize overlays, same image tag |
+| Logs | Write to **stdout**, platform collects | Container logs → agent |
+| Admin tasks | One-off jobs as separate processes | CronJob for backups |
+
+### Monolithic vs Microservices Architecture
+
+A **monolith** is a single application where UI, business logic, and data access are built and deployed as one unit — simple to start, but any change redeploys the whole thing, and it all scales together even if only one part is under load. **Microservices** split the application into small, independently deployable services, each owning its own functionality (often its own database) and communicating over the network. This lets teams deploy and scale independently, at the cost of added operational complexity — exactly the complexity Kubernetes exists to manage.
+
+**Project usage:** this project's `devops-app` is deployed as a single Deployment with its own Postgres, i.e. closer to a monolith in shape — Kubernetes here is used less for microservice orchestration between many services and more for the deployment, scaling, self-healing, and rollout guarantees a single app benefits from regardless.
+
+### Synchronous vs Asynchronous
+
+**Synchronous** means one step waits for the previous step to finish — like a phone call. **Asynchronous** means a step fires and moves on without waiting — like a text message. This explains RDS Multi-AZ (synchronous — the standby confirms the write before it's considered done) vs Read Replicas (asynchronous — faster, but can lag).
+
+### Cloud Migration Strategies
+
+The "7 Rs": **Retire** (switch off) · **Retain** (leave as is) · **Rehost** (lift-and-shift VMs) · **Relocate** (move VMware/hypervisor wholesale) · **Replatform** (lift-tinker-shift: e.g. self-hosted DB → RDS) · **Repurchase** (move to SaaS) · **Refactor** (re-architect cloud-native). Cost and risk rise left to right while long-term benefit rises too. Vendor lock-in is a trade-off, not a sin: open standards (Kubernetes, PostgreSQL, Terraform, containers) keep exits cheap, while proprietary services (DynamoDB, Cosmos DB, Lambda) buy speed at the price of portability.
+
+---
+
+## Web, API and Data Format Basics
 
 ### API
 
@@ -47,25 +136,9 @@ Kubernetes manifests, Pulumi's `Pulumi.yaml`/`pulumi.*.yaml`, and GitHub Actions
 
 **Project usage:** every manifest under `platform/deployment/kubernetes` is YAML; IAM and Azure role-assignment policies embedded in `irsa.tf`, `eks.tf`, and the Pulumi `*.py` files are built as JSON via `jsonencode(...)` (Terraform) or native Python dicts (Pulumi).
 
-### Encryption
+---
 
-Encryption scrambles data using a **key** so only someone with the correct key can decrypt it. **Encryption at rest** protects stored data; **encryption in transit** protects data while moving across a network.
-
-**Project usage:** `rds.tf` sets `storage_encrypted = true` with a customer-managed KMS key (`aws_kms_key.rds`); the Azure side's `storage.py` and `__main__.py` use TLS-only storage accounts (`minimum_tls_version = "TLS1_2"`) and PostgreSQL Flexible Server with SSL enforced (`PGSSLMODE: "require"` in `backup-config-patch.yaml`).
-
-### Provisioning
-
-Provisioning means creating and setting up a resource so it's ready to use — e.g., "provisioning an EC2 instance" or "provisioning an AKS cluster" means the cloud allocating the actual compute and handing it to you.
-
-### Managed Services
-
-A managed service means the cloud provider operates the underlying infrastructure for you — patching the OS, replacing failed hardware, handling backups, scaling the engine — instead of you doing it yourself on a raw VM. "Managed" doesn't mean "no configuration"; the *operational burden* shifts from you to the provider. This is the biggest cost/control trade-off behind every choice in this project: EKS vs self-managed Kubernetes, RDS vs a self-hosted Postgres, Azure PostgreSQL Flexible Server vs a StatefulSet.
-
-**Project usage:** production overlays (`overlays/prod`, `overlays/prod-azure`) delete the in-cluster `postgres` StatefulSet entirely (see the `$patch: delete` blocks in their `kustomization.yaml`) in favor of the managed database (RDS or Azure PostgreSQL Flexible Server) — the local overlay keeps the StatefulSet because there is no managed DB to fall back to.
-
-### Physical Servers, Virtual Machines and Virtualization
-
-A physical server is one real computer. A **virtual machine** is a software-based simulation of a computer running on top of a physical machine, sharing its hardware with other VMs via a **hypervisor**. This carving of one physical machine into many independent virtual ones is **virtualization** — the foundational trick that makes cloud computing possible. An EC2 instance or an Azure VM is a VM on some physical host the provider manages; you never see or choose the physical hardware.
+## Performance and Reliability Concepts
 
 ### Bandwidth, Throughput and Latency
 
@@ -75,34 +148,54 @@ A physical server is one real computer. A **virtual machine** is a software-base
 
 This matters later: CloudFront/Azure Front Door and Route 53/Azure Traffic Manager latency-based routing are about *latency*; NAT Gateway data charges and EBS/managed-disk types are about *throughput*.
 
-### Synchronous vs Asynchronous
-
-**Synchronous** means one step waits for the previous step to finish — like a phone call. **Asynchronous** means a step fires and moves on without waiting — like a text message. This explains RDS Multi-AZ (synchronous — the standby confirms the write before it's considered done) vs Read Replicas (asynchronous — faster, but can lag).
-
-### Digital Certificates, TLS/SSL, ACM and Azure Key Vault Certificates
-
-A **certificate** cryptographically proves a server is who it claims to be, issued by a trusted **Certificate Authority (CA)**. HTTPS uses one to both verify identity and set up encryption.
-
-**AWS:** ACM (AWS Certificate Manager) issues, stores, and auto-renews free public TLS certificates for use with an ALB or CloudFront — the private key is never exposed. Certificates for CloudFront must be requested in `us-east-1` specifically, regardless of where other resources live.
-
-**Azure:** the equivalent is App Service Managed Certificates or a certificate stored in **Azure Key Vault**, attached to Application Gateway/Front Door; Let's Encrypt via cert-manager is also common on AKS, mirroring how this project would add TLS to the nginx ingress.
-
-### Caching
-
-Caching stores a copy of data somewhere faster/closer to where it's needed, so repeat requests skip expensive work. The trade-off is **staleness** until the copy refreshes or expires. This underlies CloudFront/Azure Front Door and, inside the app itself, an in-memory LRU cache.
-
-**Project usage:** `configmap.yaml` sets `LRU_CACHE_SIZE: "128"` for the application's own in-process cache — independent of any CDN, since this project has no CloudFront/Front Door layer in front of it.
-
 ### Availability Percentages ("Nines")
 
 | Availability | Downtime/year |
-|---|---|
-| 99% ("two nines") | ~3.65 days |
-| 99.9% ("three nines") | ~8.76 hours |
-| 99.99% ("four nines") | ~52.6 minutes |
-| 99.999% ("five nines") | ~5.26 minutes |
+| --- | --- |
+| 99% ("two nines") | \~3.65 days |
+| 99.9% ("three nines") | \~8.76 hours |
+| 99.99% ("four nines") | \~52.6 minutes |
+| 99.999% ("five nines") | \~5.26 minutes |
 
 Worth memorizing — SLAs and "S3 is 11 nines durable" only mean something once you can translate the percentage into real time.
+
+### Global, Regional and Zonal Resources
+
+- **Global** — exists once across the whole cloud, not tied to a region (IAM, Route 53, CloudFront, S3 bucket *names*; in Azure, Azure AD).
+- **Regional** — exists within one region but usable across all AZs in it (a VPC/VNet, an RDS/PostgreSQL Flexible Server instance).
+- **Zonal** — tied to one specific Availability Zone (an EBS volume/managed disk, a subnet).
+
+You can't attach a zonal resource to something in a different AZ, and you can't reference a regional resource from a different region.
+
+### Failure Domains and Blast Radius
+
+Smallest to largest: **process → instance/pod → AZ → region → account/subscription → provider**. Design so that losing any single domain leaves the service up, and so a mistake (bad deploy, leaked key, runaway script) is contained to one domain. Separate prod and non-prod **accounts** (strongest blast-radius control), keep Terraform state per environment/component, and avoid a single shared "god" credential.
+
+- **Static stability**: pre-provision capacity in each AZ so a failover doesn't depend on launching new instances during an outage (control planes degrade first).
+- AWS AZ **names** (`ap-south-1a`) are shuffled per account; use AZ **IDs** (`aps1-az1`) when two accounts must refer to the same physical AZ (cross-account PrivateLink, minimizing cross-AZ traffic).
+
+### Resilient Calls to Cloud APIs and Dependencies
+
+| Technique | Why |
+| --- | --- |
+| **Timeouts** on every network call | No timeout = one slow dependency exhausts all your threads |
+| **Retries with exponential backoff + jitter** | Immediate retries from many clients cause retry storms. Cloud SDKs do this for you; set `max_attempts` sensibly |
+| **Idempotency** (keys/tokens) | A retried "create order" must not create two (see Idempotency below) |
+| **Circuit breaker** | Stop calling a failing dependency; fail fast; probe to recover |
+| **Bulkheads / quotas per client** | One noisy tenant can't starve everyone |
+| **Graceful degradation** | Serve cached/partial data instead of a hard error |
+
+Throttling signals: AWS `ThrottlingException`/`RequestLimitExceeded`/HTTP 429; Azure ARM HTTP 429 with `Retry-After`. Respect them; don't hammer.
+
+### Idempotency
+
+An operation is idempotent if running it multiple times has the same effect as running it once — "set balance to $100" is idempotent; "add $10 to balance" is not. This matters because both Lambda (on retries) and Azure Functions (on retries) can deliver the same trigger more than once. The usual fix is tracking a unique event/message ID and skipping already-handled ones.
+
+**Project usage:** `dr_backup/__init__.py` writes its checkpoint to a fixed blob name (`dr-checkpoints/latest.json`) with `overwrite=True` — naturally idempotent, since re-running the timer trigger twice in the same window just overwrites the same object rather than creating duplicates. `self_healing/__init__.py`'s AKS remediation (`begin_create_or_update` with the pool's *current* parameters) and PostgreSQL restart are both naturally idempotent operations too — triggering either twice in quick succession has the same effect as once.
+
+---
+
+## Cloud Provider Fundamentals
 
 ### Endpoint
 
@@ -114,6 +207,8 @@ An endpoint is the URL/address you send a request to for a specific service — 
 
 A resource is anything you create in a cloud account — an EC2 instance, an S3 bucket, an AKS cluster. In AWS, every resource has a unique identifier called an **ARN (Amazon Resource Name)**, which is why IAM policies target the `Resource` field with an ARN rather than a name. Azure's equivalent is the **Resource ID**, a `/subscriptions/.../resourceGroups/.../providers/...` path used the same way in role assignments (see `authorization.RoleAssignment` calls in the Pulumi files).
 
+Example ARNs: `arn:aws:s3:::my-bucket/*` (S3 is global, so region/account are blank) or `arn:aws:rds:ap-south-1:123456789012:db:mydb` — the exact string IAM policies use in their `Resource` field. Azure's Resource ID equivalent: `/subscriptions/<sub-id>/resourceGroups/devops-app-production-rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/devops-app-production-pg`.
+
 ### "Elastic" in AWS Service Names
 
 In AWS naming, "Elastic" signals the resource can grow, shrink, or be reassigned on demand — an Elastic IP can move between instances, Elastic Load Balancing scales its own capacity, EC2 capacity scales up/down.
@@ -124,138 +219,39 @@ The format is `<continent>-<direction>-<number>`: `ap-south-1` = Asia Pacific, S
 
 **Project usage:** `variables.tf` defaults `aws_region` around `ap-south-1`-style values via `.env`; the Azure Pulumi program defaults `AZURE_LOCATION=centralindia` with `AZURE_DR_LOCATION=southeastasia` — chosen to mirror the AWS primary/replica region pairing (`ap-south-1` / `ap-southeast-1`) as closely as Azure's region map allows.
 
-### us-east-1's Special Status
+#### us-east-1's Special Status
 
 `us-east-1` (N. Virginia) is AWS's oldest, largest region, and several "global" services are anchored there behind the scenes — e.g., an ACM certificate must be requested in `us-east-1` to attach to a CloudFront distribution, regardless of where other resources live.
 
-### Global, Regional and Zonal Resources
+### Region, Availability Zone and Edge Location
 
-- **Global** — exists once across the whole cloud, not tied to a region (IAM, Route 53, CloudFront, S3 bucket *names*; in Azure, Azure AD).
-- **Regional** — exists within one region but usable across all AZs in it (a VPC/VNet, an RDS/PostgreSQL Flexible Server instance).
-- **Zonal** — tied to one specific Availability Zone (an EBS volume/managed disk, a subnet).
+A **Region** is a physical geographic location containing multiple isolated data centers called **Availability Zones**, each with independent power/cooling/networking but connected via low-latency private links. An **Edge Location** is a CloudFront/Route 53 point-of-presence for caching and DNS closer to end users — far more edge locations than regions exist. Azure uses the same three-tier model: **Region** → **Availability Zone** → **Point of Presence** (for Front Door/CDN).
 
-You can't attach a zonal resource to something in a different AZ, and you can't reference a regional resource from a different region.
+**Project usage:** `ap-south-1` (Mumbai) is chosen in `variables.tf` for proximity to India, with `eks.tf`'s node group and `vpc.tf`'s subnets spread across AZs via `data.aws_availability_zones.available` for high availability. The Azure side mirrors this with `AZURE_LOCATION=centralindia`.
+
+#### Multi-AZ Deployment Rationale
+
+A single AZ is a single point of failure. Spreading worker nodes, the database (via Multi-AZ/zone-redundant options), and subnets across AZs means the application keeps functioning even if one AZ fails entirely. SLAs for multi-AZ services are meaningfully higher than single-AZ ones.
+
+### Shared Responsibility Model
+
+The cloud provider is responsible for **security OF the cloud** (physical data centers, hypervisor, network infrastructure). The customer is responsible for **security IN the cloud** (IAM/RBAC policies, security group/NSG rules, OS patching, data encryption, application security). For managed services like RDS/EKS or Azure PostgreSQL/AKS, the provider takes on more of the operational burden, but the customer still owns configuration choices like network access rules and identity roles.
+
+### Common Acronyms
 
 | Acronym | Meaning |
-|---|---|
-| ARN  | Amazon Resource Name — the unique ID string for any AWS resource |
-| ENI  | Elastic Network Interface — a virtual network card attached to an instance |
-| ASG  | Auto Scaling Group — a group of EC2 instances managed as one scalable unit |
-| SLA  | Service Level Agreement — a provider's uptime/performance guarantee |
-| CMK  | Customer Master Key — a KMS encryption key you own and control |
+| --- | --- |
+| ARN | Amazon Resource Name — the unique ID string for any AWS resource |
+| ENI | Elastic Network Interface — a virtual network card attached to an instance |
+| ASG | Auto Scaling Group — a group of EC2 instances managed as one scalable unit |
+| SLA | Service Level Agreement — a provider's uptime/performance guarantee |
+| CMK | Customer Master Key — a KMS encryption key you own and control |
 | OIDC | OpenID Connect — an identity/authentication protocol built on OAuth2 |
-| JWT  | JSON Web Token — a signed token used to prove identity between systems |
-| HA   | High Availability — designed to keep running through failures |
-| IaC  | Infrastructure as Code — defining infrastructure in text files instead of clicking in a console |
+| JWT | JSON Web Token — a signed token used to prove identity between systems |
+| HA | High Availability — designed to keep running through failures |
+| IaC | Infrastructure as Code — defining infrastructure in text files instead of clicking in a console |
 
-### ARN Structure
-
-Example: `arn:aws:s3:::my-bucket/*` (S3 is global, so region/account are blank) or `arn:aws:rds:ap-south-1:123456789012:db:mydb` — the exact string IAM policies use in their `Resource` field. Azure's Resource ID equivalent: `/subscriptions/<sub-id>/resourceGroups/devops-app-production-rg/providers/Microsoft.DBforPostgreSQL/flexibleServers/devops-app-production-pg`.
-
-### Public, Private and Hybrid Cloud
-
-- **Public cloud** — infrastructure owned by a third party (AWS, Azure, GCP) and shared across customers, rented on demand.
-- **Private cloud** — infrastructure dedicated to one organization, on-premises or hosted.
-- **Hybrid cloud** — a mix of both, connected via VPN or a dedicated link.
-
-**Project usage:** this project deliberately supports both a "private"-style local cluster (Minikube/Kind/K3s/MicroK8s, no cloud dependency) and true public-cloud deployments (EKS via Terraform, AKS via Pulumi) from the same Kubernetes manifests, selected purely by which overlay `deploy_kubernetes.sh`/ArgoCD applies.
-
-### Service Models — IaaS, PaaS, SaaS
-
-- **IaaS** — raw, virtualized building blocks (EC2/Azure VMs, VPC/VNet, EBS/managed disks) over the internet; you manage the OS, runtime and app.
-- **PaaS** — a ready-to-use framework; the provider manages infrastructure and runtime so you focus on code (Elastic Beanstalk/App Runner; Azure App Service, Azure Functions).
-- **SaaS** — a fully finished application you just use (AWS WorkMail; Microsoft 365).
-
-EKS/RDS and AKS/PostgreSQL Flexible Server all sit closer to the "managed" end — the provider runs the control plane/DB engine, you manage configuration and workloads on top.
-
-### CAPEX vs OPEX
-
-Before cloud computing, a company bought physical servers, guessed capacity years in advance, and paid full price whether they were busy or idle — a large **CAPEX**. Cloud computing turns this into **OPEX** — rent by the hour/second, scale within minutes, stop paying the moment you stop using a resource, at a premium versus owning hardware outright at large scale.
-
-### Elasticity vs Scalability
-
-- **Scalability** — the ability to handle more load by adding resources; can be manual.
-- **Elasticity** — scalability that happens *automatically* in response to demand, and scales back down automatically (Auto Scaling Groups/VM Scale Sets, HPA, Lambda/Azure Functions Consumption plan). Elasticity is what makes "pay only for what you use" actually true.
-
-**Project usage:** `hpa.yaml` and its per-overlay patches scale the app's pod count automatically; `eks.tf`'s managed node group and the Azure Pulumi program's AKS `agent_pool_profiles` both set `enable_auto_scaling`/`min_count`/`max_count` so node capacity itself is elastic too.
-
-### Pets vs Cattle, Mutable vs Immutable Infrastructure
-
-- **Pets**: hand-built, named, repaired when sick (`web01`). **Cattle**: identical, disposable, replaced when sick (an Auto Scaling Group instance, a Kubernetes pod).
-- **Mutable**: SSH in and patch the running server (config drift builds up). **Immutable**: never modify a running server. Build a new image/container, roll it out, destroy the old one. Everything in this project (containers, Terraform/Pulumi, GitOps) pushes toward immutable.
-- Rule: if you can't rebuild it from code in minutes, it's a pet. Pets are where outages and "works on my machine" live.
-
-### The Twelve-Factor App (what a cloud-ready app looks like)
-
-| Factor | Practice | In this project |
-|---|---|---|
-| Config | Env vars, not code | `configmap.yaml`, `secrets.yaml` |
-| Backing services | Attached by URL/credentials | RDS/PostgreSQL via endpoint env vars |
-| Processes | **Stateless**, share-nothing; state goes to a DB/object store | App pod local SQLite is the exception (hence `sessionAffinity: ClientIP`) |
-| Port binding | App listens on a port itself | `containerPort` + Service |
-| Concurrency | Scale out with more processes | HPA 2–10 replicas |
-| Disposability | Fast start, **graceful shutdown on `SIGTERM`** | Probes + rolling update |
-| Dev/prod parity | Same image everywhere | Kustomize overlays, same image tag |
-| Logs | Write to **stdout**, platform collects | Container logs → agent |
-| Admin tasks | One-off jobs as separate processes | CronJob for backups |
-
-### Failure Domains and Blast Radius
-
-Smallest to largest: **process → instance/pod → AZ → region → account/subscription → provider**. Design so that losing any single domain leaves the service up, and so a mistake (bad deploy, leaked key, runaway script) is contained to one domain. Separate prod and non-prod **accounts** (strongest blast-radius control), keep Terraform state per environment/component, and avoid a single shared "god" credential.
-- **Static stability**: pre-provision capacity in each AZ so a failover doesn't depend on launching new instances during an outage (control planes degrade first).
-- AWS AZ **names** (`ap-south-1a`) are shuffled per account; use AZ **IDs** (`aps1-az1`) when two accounts must refer to the same physical AZ (cross-account PrivateLink, minimizing cross-AZ traffic).
-
-### Resilient Calls to Cloud APIs and Dependencies
-
-| Technique | Why |
-|---|---|
-| **Timeouts** on every network call | No timeout = one slow dependency exhausts all your threads |
-| **Retries with exponential backoff + jitter** | Immediate retries from many clients cause retry storms. Cloud SDKs do this for you; set `max_attempts` sensibly |
-| **Idempotency** (keys/tokens) | A retried "create order" must not create two (see Idempotency) |
-| **Circuit breaker** | Stop calling a failing dependency; fail fast; probe to recover |
-| **Bulkheads / quotas per client** | One noisy tenant can't starve everyone |
-| **Graceful degradation** | Serve cached/partial data instead of a hard error |
-
-Throttling signals: AWS `ThrottlingException`/`RequestLimitExceeded`/HTTP 429; Azure ARM HTTP 429 with `Retry-After`. Respect them; don't hammer.
-
-### Cloud Migration Strategies ("the 7 Rs")
-
-**Retire** (switch off) · **Retain** (leave as is) · **Rehost** (lift-and-shift VMs) · **Relocate** (move VMware/hypervisor wholesale) · **Replatform** (lift-tinker-shift: e.g. self-hosted DB → RDS) · **Repurchase** (move to SaaS) · **Refactor** (re-architect cloud-native). Cost and risk rise left to right while long-term benefit rises too. Vendor lock-in is a trade-off, not a sin: open standards (Kubernetes, PostgreSQL, Terraform, containers) keep exits cheap, while proprietary services (DynamoDB, Cosmos DB, Lambda) buy speed at the price of portability.
-
-### Pricing Models and Free Tiers
-
-Both AWS and Azure bill **pay-as-you-go** — no upfront commitment, billed per hour/second/request/GB. AWS's Free Tier has three types often confused: **Always Free** (permanently free within a limit), **12-Months Free** (free for the account's first year), and **Trials** (short-term credits expiring on a schedule regardless of usage). Azure has an analogous mix of always-free amounts and a 12-month free allowance on select services.
-
-**Project usage:** `variables.tf` and `outputs.tf` are written specifically around AWS Free Tier sizing (`db.t3.micro`, `t3.large` nodes, `estimated_free_tier_note` output); the Azure Pulumi program mirrors this with Burstable AKS/PostgreSQL SKUs (`Standard_D2s_v6`, `Standard_B1ms`) chosen from Azure's free-for-12-months list.
-
-### Service Quotas, Capacity Errors, and Throttling
-
-**Quota** (limit your account may use) and **capacity** (does the provider have the hardware right now?) are different problems with different errors.
-
-| | Quota problem | Capacity problem |
-|---|---|---|
-| AWS error | `VcpuLimitExceeded`, `...LimitExceeded` | `InsufficientInstanceCapacity` |
-| Azure error | `QuotaExceeded` | `SkuNotAvailable`, `AllocationFailed`, `ZonalAllocationFailed` |
-| Fix | Request an increase (can take hours/days; plan ahead) | Retry later, try another AZ/instance type/size, use capacity reservations |
-
-```bash
-# AWS
-aws service-quotas list-service-quotas --service-code ec2 \
-  --query "Quotas[?contains(QuotaName,'On-Demand')].[QuotaName,Value]" --output table
-aws service-quotas request-service-quota-increase --service-code ec2 --quota-code <code> --desired-value 64
-# Azure
-az vm list-usage --location centralindia -o table
-```
-Classic surprises: vCPU limits per instance family (new accounts start low; GPU families often **zero**), Elastic IPs and VPCs per region, security groups per ENI, Lambda concurrency, subnet IP exhaustion. Quotas are **per region** and soft limits are raised by request; hard limits are not. Check quotas **before** a launch, load test, or Black Friday.
-
-### Ways to Interact with a Cloud Provider
-
-**AWS:** the Management Console (web UI), the AWS CLI (scripting), and AWS SDKs (boto3, etc.).
-**Azure:** the Azure Portal, the Azure CLI (`az`), and Azure SDKs — plus Pulumi's native Python SDK, which calls the Azure Resource Manager API directly rather than shelling out to the CLI.
-
-This project uses Terraform (calls the AWS API under the hood) and Pulumi (calls the Azure API under the hood) rather than the Console/CLI directly for either cloud — a fourth, IaC-based way to reach the same APIs.
-
-### AWS Service Categories
+### Service Categories
 
 AWS has 200+ services, but almost everything fits a handful of buckets: **Compute** (EC2, Lambda, ECS, EKS), **Storage** (S3, EBS, EFS, FSx), **Database** (RDS, DynamoDB), **Networking** (VPC, Route 53, CloudFront, ELB), **Security & Identity** (IAM, KMS, Secrets Manager, WAF/Shield), **Monitoring** (CloudWatch, CloudTrail, Config), **Developer Tools** (CodePipeline, CodeBuild, CodeDeploy). Azure's service catalog maps onto the same buckets (Compute: VMs/AKS/Functions; Storage: Blob/Files; Database: Azure SQL/PostgreSQL/Cosmos DB; Networking: VNet/Front Door/Load Balancer; Security: Azure AD/Key Vault/Defender; Monitoring: Azure Monitor/Log Analytics; Developer Tools: Azure DevOps/GitHub Actions).
 
@@ -264,7 +260,7 @@ AWS has 200+ services, but almost everything fits a handful of buckets: **Comput
 Names change often; verify current names in each provider's docs.
 
 | Capability | AWS | Azure | GCP |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Virtual machines | EC2 | Virtual Machines | Compute Engine |
 | Autoscaled VM groups | Auto Scaling Group | VM Scale Sets | Managed Instance Groups |
 | Managed Kubernetes | EKS | AKS | GKE |
@@ -296,6 +292,82 @@ Names change often; verify current names in each provider's docs.
 
 GCP quirks worth knowing: the **VPC is global** (one network spans regions); **projects** are the unit of billing/IAM/quotas; discounts come automatically (**sustained use**) or via **committed use**; "preemptible" VMs became **Spot VMs**.
 
+### Resource Tagging Strategy
+
+A tagging convention — `Name`, `Environment`, `Owner`, `CostCenter` — applied consistently enables cost allocation, easier search/filtering, and automated policies. Azure's equivalent is resource **Tags**, set the same way.
+
+**Project usage:**
+
+```hcl
+# main.tf
+locals {
+  common_tags = {
+    Project     = var.app_name
+    Environment = var.environment
+    ManagedBy   = "terraform"
+  }
+}
+# provider.tf
+provider "aws" {
+  default_tags { tags = local.common_tags }
+}
+```
+
+Every AWS resource in this project inherits `common_tags` automatically via `default_tags`. The Azure Pulumi program does the equivalent manually with a `common_tags` dict (`{"app":..., "environment":..., "managed-by": "pulumi"}`) passed explicitly into each resource, since Pulumi/Azure has no provider-level "default tags" feature.
+
+### Service Quotas, Capacity Errors, and Throttling
+
+**Quota** (limit your account may use) and **capacity** (does the provider have the hardware right now?) are different problems with different errors.
+
+|  | Quota problem | Capacity problem |
+| --- | --- | --- |
+| AWS error | `VcpuLimitExceeded`, `...LimitExceeded` | `InsufficientInstanceCapacity` |
+| Azure error | `QuotaExceeded` | `SkuNotAvailable`, `AllocationFailed`, `ZonalAllocationFailed` |
+| Fix | Request an increase (can take hours/days; plan ahead) | Retry later, try another AZ/instance type/size, use capacity reservations |
+
+```bash
+# AWS
+aws service-quotas list-service-quotas --service-code ec2 \
+  --query "Quotas[?contains(QuotaName,'On-Demand')].[QuotaName,Value]" --output table
+aws service-quotas request-service-quota-increase --service-code ec2 --quota-code <code> --desired-value 64
+# Azure
+az vm list-usage --location centralindia -o table
+```
+
+Classic surprises: vCPU limits per instance family (new accounts start low; GPU families often **zero**), Elastic IPs and VPCs per region, security groups per ENI, Lambda concurrency, subnet IP exhaustion. Quotas are **per region** and soft limits are raised by request; hard limits are not. Check quotas **before** a launch, load test, or Black Friday.
+
+---
+
+## Cloud Account Setup and CLI Usage
+
+### Signing Up for a Cloud Account
+
+Both AWS and Azure require an email address, a card for identity verification (you won't be charged unless you exceed free limits), and a phone number.
+
+### First Actions After Account Creation
+
+1. You start as the **root user** (AWS) or **Global Administrator** (Azure Entra ID) — full, unrestricted access tied to the sign-up identity.
+2. The 12-month free-tier clock starts from account creation, not first resource use.
+3. No resources exist yet — an empty AWS account has a Default VPC per region; an empty Azure subscription has no default network at all until you create one.
+
+### Recommended First Steps on a New Account
+
+Root/Global-Admin MFA → create an individual identity for yourself → set a Budget alert → pick a home region → configure the CLI. Each step reduces a specific risk: an unsecured top-level account, using it for daily work, an unnoticed bill, resources scattered across the wrong region, and unauthenticated CLI/IaC calls.
+
+Expanded as a checklist (the first 10 minutes on a new account):
+
+1. Enable **MFA on the root user/Global Administrator**.
+2. Create an individual **IAM Identity Center user or IAM user** (AWS) / **Azure AD user with RBAC** (Azure) for yourself — stop using the top-level identity for anything but account-level tasks.
+3. Set a **Billing/Budget alert**.
+4. Pick a **home Region**.
+5. Install and configure the **CLI** (`aws configure` / `az login`) for scripting or Terraform/Pulumi.
+
+### Ways to Interact with a Cloud Provider
+
+**AWS:** the Management Console (web UI), the AWS CLI (scripting), and AWS SDKs (boto3, etc.). **Azure:** the Azure Portal, the Azure CLI (`az`), and Azure SDKs — plus Pulumi's native Python SDK, which calls the Azure Resource Manager API directly rather than shelling out to the CLI.
+
+This project uses Terraform (calls the AWS API under the hood) and Pulumi (calls the Azure API under the hood) rather than the Console/CLI directly for either cloud — a fourth, IaC-based way to reach the same APIs.
+
 ### AWS CLI Setup
 
 1. Install the CLI (`brew install awscli`, or the provided installer).
@@ -309,18 +381,23 @@ Never generate long-lived access keys for the root user, and never commit `~/.aw
 
 ### Using the Cloud CLIs Properly
 
-**Always check who you are first** (wrong account/subscription is the #1 CLI accident):
+#### Check Who You Are First
+
+Wrong account/subscription is the #1 CLI accident:
+
 ```bash
 aws sts get-caller-identity          # account, ARN, user/role
 az account show -o table             # subscription and tenant
 ```
 
-**AWS profiles, SSO, and credential precedence**
+#### AWS Profiles, SSO, and Credential Precedence
+
 ```bash
 aws configure sso                    # browser-based login, no long-lived keys on disk
 aws sso login --profile prod
 export AWS_PROFILE=prod              # or per command: aws s3 ls --profile prod
 ```
+
 ```text
 # ~/.aws/config : assume a role via another profile
 [profile prod-admin]
@@ -328,17 +405,23 @@ role_arn       = arn:aws:iam::123456789012:role/Admin
 source_profile = sso-base
 region         = ap-south-1
 ```
+
 > **Precedence trap**: `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` environment variables **silently override** `--profile`-less profile settings (CLI flags win; then env vars; then assume-role/SSO; then shared credentials/config; then container/instance role). A stale exported key explains most "why is it using the wrong account" questions: `env | grep AWS_`.
 
-**Output control with JMESPath `--query` (works in `aws` and `az`)**
+#### Output Control with JMESPath `--query`
+
+Works in `aws` and `az`:
+
 ```bash
 aws ec2 describe-instances --query 'Reservations[].Instances[].[InstanceId,State.Name,Tags[?Key==`Name`]|[0].Value]' --output table
 aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'length(Reservations[].Instances[])'
 az vm list -g my-rg --query "[].{name:name, size:hardwareProfile.vmSize}" -o table
 ```
+
 Combine with `jq` for anything complex. `--output text` for scripts, `--no-paginate`/`--max-items` for big lists, `AWS_PAGER=""` to stop the pager in scripts.
 
-**Handy operations**
+#### Handy Operations
+
 ```bash
 aws ec2 run-instances ... --dry-run            # checks permissions without creating anything
 aws ec2 wait instance-running --instance-ids i-0abc   # block until a state is reached (waiters)
@@ -361,39 +444,7 @@ The Console shows a region dropdown; almost everything you create is scoped to w
 
 ---
 
-## AWS Account & Global Infrastructure
-
-### Signing Up for a Cloud Account
-
-Both AWS and Azure require an email address, a card for identity verification (you won't be charged unless you exceed free limits), and a phone number.
-
-### First Actions After Account Creation
-
-1. You start as the **root user** (AWS) or **Global Administrator** (Azure Entra ID) — full, unrestricted access tied to the sign-up identity.
-2. The 12-month free-tier clock starts from account creation, not first resource use.
-3. No resources exist yet — an empty AWS account has a Default VPC per region; an empty Azure subscription has no default network at all until you create one.
-
-### Recommended First Steps on a New Account
-
-Root/Global-Admin MFA → create an individual identity for yourself → set a Budget alert → pick a home region → configure the CLI. Each step reduces a specific risk: an unsecured top-level account, using it for daily work, an unnoticed bill, resources scattered across the wrong region, and unauthenticated CLI/IaC calls.
-
-### Region, Availability Zone and Edge Location
-
-A **Region** is a physical geographic location containing multiple isolated data centers called **Availability Zones**, each with independent power/cooling/networking but connected via low-latency private links. An **Edge Location** is a CloudFront/Route 53 point-of-presence for caching and DNS closer to end users — far more edge locations than regions exist. Azure uses the same three-tier model: **Region** → **Availability Zone** → **Point of Presence** (for Front Door/CDN).
-
-**Project usage:** `ap-south-1` (Mumbai) is chosen in `variables.tf` for proximity to India, with `eks.tf`'s node group and `vpc.tf`'s subnets spread across AZs via `data.aws_availability_zones.available` for high availability. The Azure side mirrors this with `AZURE_LOCATION=centralindia`.
-
-### Multi-AZ Deployment Rationale
-
-A single AZ is a single point of failure. Spreading worker nodes, the database (via Multi-AZ/zone-redundant options), and subnets across AZs means the application keeps functioning even if one AZ fails entirely. SLAs for multi-AZ services are meaningfully higher than single-AZ ones.
-
-### Shared Responsibility Model
-
-The cloud provider is responsible for **security OF the cloud** (physical data centers, hypervisor, network infrastructure). The customer is responsible for **security IN the cloud** (IAM/RBAC policies, security group/NSG rules, OS patching, data encryption, application security). For managed services like RDS/EKS or Azure PostgreSQL/AKS, the provider takes on more of the operational burden, but the customer still owns configuration choices like network access rules and identity roles.
-
----
-
-## Identity & Access Management — IAM and Azure RBAC
+## Identity and Access Management — IAM and Azure RBAC
 
 IAM (AWS) and Azure AD/Entra ID + Azure RBAC (Azure) let you securely control who is authenticated and authorized to use specific resources. Both support fine-grained access control adhering to least privilege.
 
@@ -419,17 +470,47 @@ The **root user** (AWS) is created with the account and has unrestricted access,
 
 MFA requires a second proof of identity in addition to a password. It should be enabled on the root/Global-Admin identity without exception, and enforced for anyone with console access to production resources.
 
-### IAM Access Analyzer / Azure AD Access Reviews
-
-Access Analyzer scans resource policies (S3 buckets, IAM roles, KMS keys) and flags any that grant access to an external entity you likely didn't intend. Azure's nearest equivalents are **Azure AD Access Reviews** and **Microsoft Defender for Cloud's** identity recommendations, which surface unintended or excessive access grants the same way.
-
 ### Access Keys and Secret Keys
 
 An IAM User can generate an **Access Key ID + Secret Access Key** — a long-lived credential for CLI/SDK calls. If leaked, anyone can use them until revoked, which is exactly why IAM Roles (temporary, auto-expiring) are preferred for anything automated. Azure's equivalent long-lived credential is a **Service Principal client secret** — also disfavored in this project in favor of Managed/Workload Identity wherever a workload runs inside the cluster.
 
+### IAM Policy Document Structure
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:GetObject"],
+    "Resource": ["arn:aws:s3:::my-bucket/*"],
+    "Condition": { "StringEquals": { "aws:RequestedRegion": "ap-south-1" } }
+  }]
+}
+```
+
+**Effect** — Allow or Deny. **Action** — the API call(s) permitted. **Resource** — the ARN(s) this applies to. **Condition** (optional) — extra constraints (IP range, tags, time, MFA).
+
 ### Policy Evaluation Logic
 
 By default, everything is denied. A request is only allowed if some attached policy has an explicit `"Effect": "Allow"` matching the action/resource — and it's blocked entirely if any policy has an explicit `"Effect": "Deny"`, which always overrides any Allow. Azure RBAC evaluates the same way: assignments are additive Allow-only (no explicit Deny in classic RBAC, though **Azure AD Conditional Access** and **deny assignments** exist for special cases), and the effective permission is the union of every role assigned at every scope above the resource.
+
+### Identity-Based vs Resource-Based Policy
+
+An **identity-based policy** is attached to a user/group/role and defines what that identity can do. A **resource-based policy** (an S3 bucket policy, a KMS key policy) is attached directly to the resource and defines who can access *it*, including cross-account principals. Access requires no explicit Deny and at least one applicable Allow across both. Azure has no widespread resource-based-policy equivalent for most services — role assignments scoped directly to a resource (e.g., a role assignment on a single storage account, as `postgres_backup_identity.py` and `dr.py` both do) serve the same narrowing purpose.
+
+### Least Privilege in Practice
+
+The AWS Load Balancer Controller's IAM policy is scoped narrowly: `CreateLoadBalancer`/`CreateTargetGroup` are gated behind a `Condition` requiring the `elbv2.k8s.aws/cluster` tag, and delete/modify actions require that tag on the target resource — so the controller can only manage load balancers it created and tagged itself, even though the `Resource` field is a wildcard (common for ELB APIs, since ARNs aren't known ahead of time).
+
+**Project usage:** `irsa.tf`'s `postgres_backup` policy applies the same pattern more directly — `Resource = "${aws_s3_bucket.files_primary[0].arn}/postgres/*"` scopes the backup role to only the `postgres/` prefix of one bucket, and `backup_verifier.tf`'s Lambda role adds a `Condition` requiring `cloudwatch:namespace = DevopsApp/Backups` so it can only publish metrics into that one namespace.
+
+### AWS STS (Security Token Service)
+
+STS issues the short-lived, temporary credentials (access key + secret key + session token) backing every role assumption, typically valid 15 minutes to 12 hours. This is why roles are safer than IAM user access keys: STS-issued credentials expire automatically and never need manual rotation. Azure's Managed/Workload Identity tokens work the same way under the hood — short-lived, silently refreshed by the SDK.
+
+### sts:AssumeRoleWithWebIdentity vs sts:AssumeRole
+
+`sts:AssumeRole` is used when a principal (an IAM user, another role) directly assumes a role, typically cross-account. `sts:AssumeRoleWithWebIdentity` is used when the caller authenticates via an external OIDC/SAML provider (Kubernetes' projected service-account token, Google, Facebook login) instead of native IAM credentials — the mechanism behind IRSA.
 
 ### IRSA (IAM Roles for Service Accounts) and Azure Workload Identity
 
@@ -491,15 +572,12 @@ metadata:
 
 Both mechanisms let the exact same CronJob (`postgres-backup-cronjob.yaml`) run unmodified against either cloud — only the ServiceAccount annotation and the sidecar upload command (`aws s3 cp` vs `az storage blob upload`) differ per overlay.
 
-### Identity-Based vs Resource-Based Policy
-
-An **identity-based policy** is attached to a user/group/role and defines what that identity can do. A **resource-based policy** (an S3 bucket policy, a KMS key policy) is attached directly to the resource and defines who can access *it*, including cross-account principals. Access requires no explicit Deny and at least one applicable Allow across both. Azure has no widespread resource-based-policy equivalent for most services — role assignments scoped directly to a resource (e.g., a role assignment on a single storage account, as `postgres_backup_identity.py` and `dr.py` both do) serve the same narrowing purpose.
-
 ### CI/CD Without Static Keys: OIDC Federation (GitHub Actions → AWS/Azure)
 
 Long-lived access keys in CI secrets are the most commonly leaked credential. With **OIDC federation** the CI job presents a short-lived signed token (JWT) from its identity provider; the cloud exchanges it for temporary credentials. Same idea as IRSA/Workload Identity, but for pipelines.
 
 **AWS**: create an IAM **OIDC identity provider** for `token.actions.githubusercontent.com`, then a role whose trust policy pins the repo and branch:
+
 ```json
 {
   "Version": "2012-10-17",
@@ -514,6 +592,7 @@ Long-lived access keys in CI secrets are the most commonly leaked credential. Wi
   }]
 }
 ```
+
 ```yaml
 permissions:
   id-token: write      # lets the job request an OIDC token
@@ -524,6 +603,7 @@ steps:
       role-to-assume: arn:aws:iam::123456789012:role/gha-deploy
       aws-region: ap-south-1
 ```
+
 **Azure**: add a **federated credential** to an app registration or user-assigned managed identity (subject like `repo:my-org/my-repo:environment:prod`), grant it a role at the narrowest scope, then `azure/login` with `client-id`, `tenant-id`, `subscription-id` (no secret).
 
 > **Biggest mistake:** a wildcard `sub` (`repo:my-org/*`) lets *any* repo in the org assume the role. Pin repo **and** branch/environment, and use a separate role per environment. The same principle applies to any CI: Jenkins on EC2/EKS should use an instance profile / IRSA / managed identity instead of the static keys in `.env`.
@@ -537,41 +617,19 @@ steps:
 
 Keep 1–2 emergency admin identities that bypass SSO/Conditional Access (for when the IdP itself is down): long random passwords in a physical safe, hardware MFA, excluded from policies that depend on the IdP, **alerts on every use**, and tested periodically. The root user (AWS) and Global Administrator (Azure) should be locked down with MFA and never used day to day.
 
-### IAM Policy Document Structure
+### IAM Access Analyzer / Azure AD Access Reviews
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [{
-    "Effect": "Allow",
-    "Action": ["s3:GetObject"],
-    "Resource": ["arn:aws:s3:::my-bucket/*"],
-    "Condition": { "StringEquals": { "aws:RequestedRegion": "ap-south-1" } }
-  }]
-}
-```
+Access Analyzer scans resource policies (S3 buckets, IAM roles, KMS keys) and flags any that grant access to an external entity you likely didn't intend. Azure's nearest equivalents are **Azure AD Access Reviews** and **Microsoft Defender for Cloud's** identity recommendations, which surface unintended or excessive access grants the same way.
 
-**Effect** — Allow or Deny. **Action** — the API call(s) permitted. **Resource** — the ARN(s) this applies to. **Condition** (optional) — extra constraints (IP range, tags, time, MFA).
+### IAM Identity Center vs Azure AD Single Sign-On
 
-### Least Privilege in Practice — the Load Balancer Controller Policy
-
-The AWS Load Balancer Controller's IAM policy is scoped narrowly: `CreateLoadBalancer`/`CreateTargetGroup` are gated behind a `Condition` requiring the `elbv2.k8s.aws/cluster` tag, and delete/modify actions require that tag on the target resource — so the controller can only manage load balancers it created and tagged itself, even though the `Resource` field is a wildcard (common for ELB APIs, since ARNs aren't known ahead of time).
-
-**Project usage:** `irsa.tf`'s `postgres_backup` policy applies the same pattern more directly — `Resource = "${aws_s3_bucket.files_primary[0].arn}/postgres/*"` scopes the backup role to only the `postgres/` prefix of one bucket, and `backup_verifier.tf`'s Lambda role adds a `Condition` requiring `cloudwatch:namespace = DevopsApp/Backups` so it can only publish metrics into that one namespace.
-
-### sts:AssumeRoleWithWebIdentity vs sts:AssumeRole
-
-`sts:AssumeRole` is used when a principal (an IAM user, another role) directly assumes a role, typically cross-account. `sts:AssumeRoleWithWebIdentity` is used when the caller authenticates via an external OIDC/SAML provider (Kubernetes' projected service-account token, Google, Facebook login) instead of native IAM credentials — the mechanism behind IRSA.
-
-### AWS STS (Security Token Service)
-
-STS issues the short-lived, temporary credentials (access key + secret key + session token) backing every role assumption, typically valid 15 minutes to 12 hours. This is why roles are safer than IAM user access keys: STS-issued credentials expire automatically and never need manual rotation. Azure's Managed/Workload Identity tokens work the same way under the hood — short-lived, silently refreshed by the SDK.
+IAM Identity Center (formerly AWS SSO) centrally manages human access across multiple accounts through a single sign-on — log in once, get a portal listing every account/role you're allowed to assume. It's the recommended way for people (as opposed to workloads) to access AWS, reserving plain IAM users for edge cases. Azure AD (Entra ID) provides the equivalent single-sign-on experience natively across every subscription in a tenant, without a separate "Identity Center" product being necessary.
 
 ### Application End-User Login (Cognito / Azure AD B2C)
 
 IAM/Azure RBAC manage access to the cloud account itself, not your application's end users. **Amazon Cognito** handles sign-up/sign-in, password resets, and social/enterprise login for your app's customers, issuing JWT tokens your app verifies. Azure's equivalent is **Azure AD B2C** (or Entra External ID) — a separate concern entirely from account access, same as Cognito.
 
-### Cognito User Pools vs Identity Pools
+#### Cognito User Pools vs Identity Pools
 
 A **User Pool** is a managed user directory — handles sign-up, sign-in, MFA, social/enterprise login, and issues JWT tokens. An **Identity Pool** exchanges a User Pool token (or another IdP's) for temporary, scoped AWS credentials — used when end users need direct, limited access to AWS resources (e.g., uploading to a user-specific S3 folder) rather than going through your backend.
 
@@ -591,9 +649,9 @@ A port number identifies *which application* on a machine. Common ports: 22 (SSH
 
 **Project usage:** `rds.tf`'s security group opens `var.db_port` (5432) only from the EKS node security group; `postgres-service` in `postgres-statefulset.yaml` exposes the same port internally for the local overlay's in-cluster Postgres.
 
-### DNS
+### TCP vs UDP
 
-DNS (Domain Name System) translates human-readable names into IP addresses. Route 53 is AWS's DNS service; **Azure DNS** is the direct equivalent.
+**TCP** is connection-oriented — guarantees delivery and order (HTTP, SSH, database connections). **UDP** is connectionless — faster, lower-overhead, no delivery guarantee (DNS lookups, video streaming, gaming).
 
 ### Network Layers — L3, L4, L7
 
@@ -605,51 +663,37 @@ NLB/Azure Load Balancer operate at Layer 4 (routes raw TCP/UDP by IP+port); ALB/
 
 **Project usage:** `base/ingress.yaml` (nginx ingress class) is an L7 router; `base/service.yaml`'s NodePort Service and the local overlay's NodePort patch operate at L4.
 
-### Firewalls
+### CIDR
 
-A firewall is a set of rules deciding what network traffic is allowed in or out. Security Groups and NACLs are AWS's two firewall mechanisms; **NSGs** and **Azure Firewall** are Azure's.
+| CIDR | Total IPs | Usable IPs | Common Use |
+| --- | --: | --: | --- |
+| /32 | 1 | 1 | Single host/IP whitelist |
+| /30 | 4 | 2 | Point-to-point links |
+| /29 | 8 | 6 | Very small subnet |
+| /28 | 16 | 14 | Small network |
+| /27 | 32 | 30 | Small office |
+| /26 | 64 | 62 | Medium subnet |
+| /25 | 128 | 126 | Medium subnet |
+| /24 | 256 | 254 | Common subnet size |
+| /23 | 512 | 510 | Larger subnet |
+| /22 | 1024 | 1022 | Multiple application servers |
+| /21 | 2048 | 2046 | Large subnet |
+| /20 | 4096 | 4094 | Enterprise subnet |
+| /16 | 65,536 | 65,534 | Common VPC/VNet |
+| /8 | 16,777,216 | 16,777,214 | Very large private network |
 
-**Project usage:** `overlays/prod/network-policy.yaml` and `overlays/prod-azure/network-policy.yaml` implement the same idea one layer up, inside the cluster, via Kubernetes `NetworkPolicy` — both restrict the app pods to ingress only from `ingress-nginx`/`monitoring` namespaces on port 8000, and egress only to DNS, the private database CIDR ranges, and HTTPS.
+The `/` is the number of bits reserved for the network portion of the address.
 
-### VPN vs Direct Connect / ExpressRoute
+```text
+Host Bits = 32 − CIDR
+Total IPs = 2^(Host Bits)
+```
 
-A VPN creates an encrypted tunnel over the public internet between two networks. **AWS Site-to-Site VPN** sets this up in minutes, billed per connection-hour. **AWS Direct Connect** is a dedicated, private physical link from your data center to AWS that never touches the public internet — more expensive and slower to provision, but lower latency and guaranteed bandwidth. Azure's equivalents are **Azure VPN Gateway** and **Azure ExpressRoute**, with the identical cost/latency trade-off.
+Example: `192.168.1.0/24` → network bits = 24, host bits = 8 → 2^8 = 256 IPs.
 
-### TCP vs UDP
+#### CIDR Subnetting Walkthrough
 
-**TCP** is connection-oriented — guarantees delivery and order (HTTP, SSH, database connections). **UDP** is connectionless — faster, lower-overhead, no delivery guarantee (DNS lookups, video streaming, gaming).
-
-### Elastic IP / Azure Public IP
-
-A static, public IPv4 address allocated to your account and attached to an instance or NAT Gateway. Unlike a normal public IP (which changes on stop/start), it stays the same until explicitly released. AWS charges a small hourly fee for an allocated-but-unattached Elastic IP; Azure's **Static Public IP** behaves the same way and is similarly billed while unattached.
-
-### Bastion Host
-
-A small, hardened instance in a public subnet used as a secure "jump box" — SSH into the bastion, then SSH from there into private-subnet instances with no direct internet exposure. This project's design replaces this pattern with **SSM Session Manager** (AWS) — see the Systems Management section — avoiding the bastion entirely. Azure's equivalent replacement is **Azure Bastion** or `az ssh`/`az aks command invoke`.
-
-### Horizontal vs Vertical Scaling
-
-**Vertical scaling** ("scale up") makes one server bigger — simple, but has a hard ceiling and usually needs downtime to resize. **Horizontal scaling** ("scale out") adds more servers to share the load — no real ceiling, no downtime, but requires a load balancer to distribute traffic.
-
-**Project usage:** `hpa.yaml` and the AKS/EKS node-group autoscaling settings are both horizontal-scaling mechanisms; nothing in this project relies on vertical scaling at runtime.
-
-### Load Balancers and Health Checks
-
-A load balancer sits in front of multiple servers, distributing traffic so no single one is overwhelmed, and routing around any that fail. A **health check** is a small, repeated request (e.g., "GET `/api/v1/health` every 5 seconds") a load balancer or orchestrator sends to confirm a server is still working; enough consecutive failures removes it from rotation until it recovers.
-
-**Project usage:** `deployment.yaml`'s `startupProbe`/`livenessProbe`/`readinessProbe` are exactly this mechanism at the Kubernetes level, checked before any cloud load balancer is involved.
-
-### Gateways
-
-A gateway connects one network to another, translating or controlling traffic as it passes. An **Internet Gateway** connects a VPC to the public internet, a **NAT Gateway** lets private resources reach out without being reachable from it, and a **Transit Gateway** connects many VPCs together. Azure's equivalents are the implicit internet-facing routing of a VNet, **Azure NAT Gateway**, and **Azure Virtual WAN**/**VNet peering hubs**.
-
-### ENI (Elastic Network Interface)
-
-An ENI is a virtual network card — its own private IP, MAC address, and security groups; the actual object that "attaches" a resource to a subnet. Every EC2 instance has at least one; the VPC CNI plugin assigns pods secondary IPs from ENIs on the node, which is how "each pod gets a real VPC IP" is possible. Azure's equivalent is a **Network Interface (NIC)**, similarly attached per VM and used by the Azure CNI plugin for pod networking on AKS.
-
-### VPC Peering and Transit Gateway / VNet Peering and Virtual WAN
-
-**VPC Peering** is a private, direct connection between two VPCs letting resources communicate via private IPs without the public internet. It's non-transitive (A↔B and B↔C does not give A↔C) — the limitation a **Transit Gateway** solves by acting as a hub every attached VPC connects to individually, making any-to-any reachability possible without an N² mesh. Azure's **VNet Peering** is non-transitive the same way, and **Azure Virtual WAN** is the hub-and-spoke fix.
+`cidrsubnet(prefix, newbits, netnum)` adds `newbits` to the prefix length and selects subnet number `netnum`. For a `/16` VPC with `newbits = 8`, the result is a `/24` subnet: index 0 → `10.0.0.0/24`, index 1 → `10.0.1.0/24`, and so on. Each `/24` provides 256 addresses (251 usable — AWS reserves 5 per subnet: network address, VPC router, DNS, future use, and broadcast). Azure reserves a similar 5 addresses per subnet for the same categories.
 
 ### VPC / VNet Building Blocks
 
@@ -675,21 +719,250 @@ locals {
 
 The Azure Pulumi program uses the same `10.20.0.0/16` address space for consistency, split instead into an AKS subnet (`10.20.0.0/20`) and a delegated PostgreSQL subnet (`10.20.16.0/24`) — Azure Flexible Server requires **subnet delegation** (`Microsoft.DBforPostgreSQL/flexibleServers`), which has no AWS/RDS equivalent since RDS instances aren't placed inside a delegated subnet the same way.
 
+#### Public vs Private Route Tables
+
+The **public route table** routes `0.0.0.0/0` to the Internet Gateway and associates with public subnets. The **private route table** routes `0.0.0.0/0` through the **NAT Gateway** instead — private instances can initiate outbound connections but are never directly reachable from the internet.
+
+#### Internet Gateway vs NAT Gateway
+
+An **Internet Gateway (IGW)** allows **two-way** communication between public-IP instances and the internet. A **NAT Gateway** allows only **one-way initiated** (outbound) communication from private instances — it translates private IPs to its own Elastic IP and only allows return traffic for connections it originated.
+
+#### Subnet Discovery Tags
+
+`kubernetes.io/role/elb` and `kubernetes.io/role/internal-elb` let the **AWS Load Balancer Controller** auto-discover which subnets to use for internet-facing vs internal load balancers, without manually specifying subnet IDs in every Ingress/Service. The `kubernetes.io/cluster/<name> = shared` tag scopes discovery to subnets belonging to this specific cluster. Azure's AKS instead uses the explicit `vnet_subnet_id` passed to the node pool (see `aks_subnet.id` in `__main__.py`) — no tag-based auto-discovery is needed since the subnet is wired in directly.
+
+#### Subnet Sizing for Kubernetes on VPC CNI
+
+With the AWS VPC CNI every pod consumes a **real VPC IP** from the node's ENIs. A `t3.large` supports up to 3 ENIs × 12 IPs and **35 pods**, and the CNI keeps warm spare IPs. This project's private subnets are `/24` (251 usable), which fill with only a handful of nodes. Fixes: larger subnets (`/22`–`/20`) from the start, **prefix delegation** (assigns `/28` blocks), **custom networking** (pods on a secondary CIDR), or an overlay/`kubenet`-style CNI like the Azure side uses. Symptom of exhaustion: pods stuck in `ContainerCreating` with `failed to assign an IP address`.
+
+### Elastic IP / Azure Public IP
+
+A static, public IPv4 address allocated to your account and attached to an instance or NAT Gateway. Unlike a normal public IP (which changes on stop/start), it stays the same until explicitly released. AWS charges a small hourly fee for an allocated-but-unattached Elastic IP; Azure's **Static Public IP** behaves the same way and is similarly billed while unattached.
+
+### ENI (Elastic Network Interface)
+
+An ENI is a virtual network card — its own private IP, MAC address, and security groups; the actual object that "attaches" a resource to a subnet. Every EC2 instance has at least one; the VPC CNI plugin assigns pods secondary IPs from ENIs on the node, which is how "each pod gets a real VPC IP" is possible. Azure's equivalent is a **Network Interface (NIC)**, similarly attached per VM and used by the Azure CNI plugin for pod networking on AKS.
+
+### Gateways
+
+A gateway connects one network to another, translating or controlling traffic as it passes. An **Internet Gateway** connects a VPC to the public internet, a **NAT Gateway** lets private resources reach out without being reachable from it, and a **Transit Gateway** connects many VPCs together. Azure's equivalents are the implicit internet-facing routing of a VNet, **Azure NAT Gateway**, and **Azure Virtual WAN**/**VNet peering hubs**.
+
+#### NAT Gateway Cost and Alternatives
+
+A NAT Gateway lets private-subnet instances initiate outbound connections without being reachable from the internet. It's fully managed and highly available, but costs roughly $0.045/hour (\~$32/month) plus per-GB data processing, and is **not** Free Tier eligible. A **NAT Instance** (a small EC2 running NAT software) is Free Tier eligible but needs manual HA setup and patching. Azure's **NAT Gateway** has the same managed-service cost trade-off.
+
+**Project usage:** `variables.tf`'s `enable_nat_gateway` flag (default `true`) is the cost/architecture switch: when `false`, `eks.tf`'s node group uses public subnets directly (`associate_public_ip_address = !var.enable_nat_gateway`) instead of paying for a NAT Gateway.
+
+### Firewalls
+
+A firewall is a set of rules deciding what network traffic is allowed in or out. Security Groups and NACLs are AWS's two firewall mechanisms; **NSGs** and **Azure Firewall** are Azure's.
+
+**Project usage:** `overlays/prod/network-policy.yaml` and `overlays/prod-azure/network-policy.yaml` implement the same idea one layer up, inside the cluster, via Kubernetes `NetworkPolicy` — both restrict the app pods to ingress only from `ingress-nginx`/`monitoring` namespaces on port 8000, and egress only to DNS, the private database CIDR ranges, and HTTPS.
+
+#### Security Group vs NACL
+
+| Aspect | Security Group (SG) | Network ACL (NACL) |
+| --- | --- | --- |
+| Level | Instance/ENI-level firewall | Subnet-level firewall |
+| State | Stateful — return traffic auto-allowed | Stateless — both directions must be allowed explicitly |
+| Rules | Allow only | Allow and Deny |
+| Evaluation | All rules considered together | Ordered by rule number, first match wins |
+| Default | Deny inbound, allow outbound | Custom NACL denies all until rules added |
+
+**Project usage:** `rds.tf`'s security group only allows inbound `5432` from the EKS node security group — not a CIDR block — so only traffic actually originating from a node's ENI is permitted, regardless of the node's current IP. Azure's equivalent, an **NSG**, is used the same way implicitly through the delegated-subnet + Private DNS Zone setup in `__main__.py`, which keeps the PostgreSQL Flexible Server off any public endpoint entirely.
+
+#### SG-to-SG References vs CIDR Ranges
+
+A CIDR-based rule (allow `10.0.0.0/16`) permits traffic from *any* resource in that range, including future unrelated resources. An SG-to-SG reference (allow port 5432 from a specific security group) permits traffic only from members of that group — tightly scoped, and automatically covering any new member without a re-apply. Azure NSGs support the equivalent via **Application Security Groups (ASGs)** as a rule source/destination instead of a raw CIDR.
+
+#### VPC Flow Logs / NSG Flow Logs
+
+Capture metadata about IP traffic to/from network interfaces (source/destination IP, port, protocol, bytes, accept/reject) shipped to CloudWatch Logs or S3. No packet payloads, but essential for security auditing (port scans, unexpected egress) and troubleshooting connectivity. Azure's equivalent is **NSG Flow Logs** via Network Watcher.
+
+### VPC Peering and Transit Gateway
+
+**VPC Peering** is a private, direct connection between two VPCs letting resources communicate via private IPs without the public internet. It's non-transitive (A↔B and B↔C does not give A↔C) — the limitation a **Transit Gateway** solves by acting as a hub every attached VPC connects to individually, making any-to-any reachability possible without an N² mesh. Azure's **VNet Peering** is non-transitive the same way, and **Azure Virtual WAN** is the hub-and-spoke fix.
+
+#### Transit Gateway — Advanced Architecture
+
+AWS Transit Gateway acts as a centralized network hub connecting multiple VPCs and on-premises networks. Instead of creating individual peering connections between every VPC, each VPC connects to the Transit Gateway.
+
+**Important components:** the Transit Gateway itself, Transit Gateway attachments, Transit Gateway route tables, route propagation, route associations, and appliance mode for supported inspection architectures.
+
+**Route table behavior:** a Transit Gateway attachment is associated with a Transit Gateway route table. Routes can also be propagated into route tables. A route table determines where traffic goes after entering the Transit Gateway.
+
+```text
+Production VPC ─────┐
+Development VPC ────┼── Transit Gateway ── VPN / Direct Connect
+Shared Services ───┘
+```
+
+**Advanced design considerations:**
+
+- Use separate route tables for production and non-production.
+- Prevent unintended network communication between environments.
+- Avoid overlapping CIDR ranges.
+- Configure route propagation carefully.
+- Use centralized inspection VPCs where required.
+- Monitor attachment and data-processing costs.
+- Understand inter-region peering and routing limitations.
+
+### VPC Endpoints and AWS PrivateLink
+
+A VPC Endpoint allows private connectivity from a VPC to supported services **without traversing the public internet or a NAT Gateway**. **Azure Private Link**/**Private Endpoint** is the direct equivalent, provisioning a private IP for a PaaS service (Key Vault, Storage, PostgreSQL Flexible Server) inside your VNet.
+
+#### VPC Endpoint Types
+
+- **Gateway Endpoints:** used for supported services such as S3 and DynamoDB — a free route-table entry.
+- **Interface Endpoints:** use AWS PrivateLink and endpoint ENIs for supported services (Secrets Manager, ECR, STS, CloudWatch Logs) — an ENI with a private IP, billed hourly plus per-GB — enabling truly private access from private EKS nodes with no NAT Gateway needed at all.
+
+#### AWS PrivateLink — Private Service Connectivity
+
+AWS PrivateLink allows private connectivity between VPCs and supported services without requiring public IP addresses or internet gateways. It uses interface VPC endpoints backed by endpoint network interfaces in the consumer VPC.
+
+**Main components:**
+
+- **Service Consumer:** the account accessing a service.
+- **Service Provider:** the account exposing a service.
+- **Interface Endpoint:** private endpoint created by the consumer.
+- **Endpoint Service:** service exposed by the provider, commonly through a Network Load Balancer.
+- **Endpoint Policy:** controls which actions can be performed through supported endpoints.
+
+```text
+Consumer VPC
+    |
+Interface Endpoint
+    |
+AWS PrivateLink
+    |
+Endpoint Service
+    |
+Network Load Balancer
+    |
+Provider Application
+```
+
+#### PrivateLink vs VPC Peering vs Transit Gateway
+
+| Feature | PrivateLink | VPC Peering | Transit Gateway |
+| --- | --- | --- | --- |
+| Primary purpose | Private service access | Connect two VPCs | Connect many networks |
+| Network visibility | Service-specific | Network-level | Network-level |
+| Transitive routing | Not general-purpose routing | No | Yes, through configured routes |
+| CIDR overlap | Can support overlapping CIDRs | Generally problematic | Requires careful routing design |
+| Typical use | Exposing APIs privately | Simple VPC connectivity | Enterprise network hub |
+
+PrivateLink is especially useful when an organization wants to expose an internal application to other AWS accounts without exposing its network or using public internet connectivity.
+
+**Project usage:** the Azure Pulumi program already achieves the *outcome* VPC Interface Endpoints would provide for RDS — a fully private database with no public endpoint — via PostgreSQL Flexible Server's **delegated subnet + Private DNS Zone** integration (`db_subnet`, `private_dns_zone`, `dns_vnet_link` in `__main__.py`), which is architecturally closer to VNet integration than to Private Link, but achieves the same "never touches the public internet" property `rds.tf`'s private-subnet placement achieves on AWS.
+
+### VPN vs Direct Connect / ExpressRoute
+
+A VPN creates an encrypted tunnel over the public internet between two networks. **AWS Site-to-Site VPN** sets this up in minutes, billed per connection-hour. **AWS Direct Connect** is a dedicated, private physical link from your data center to AWS that never touches the public internet — more expensive and slower to provision, but lower latency and guaranteed bandwidth. Azure's equivalents are **Azure VPN Gateway** and **Azure ExpressRoute**, with the identical cost/latency trade-off.
+
+#### AWS Direct Connect — Advanced
+
+Direct Connect establishes a dedicated physical network connection between an organization's data center and AWS. Unlike Site-to-Site VPN, the connection does not use the public internet as its transport path.
+
+**Components:**
+
+- **Connection:** physical connectivity between the customer network and AWS.
+- **Virtual Interface (VIF):** logical interface configured over the connection.
+- **Private VIF:** connects to a VPC through a Direct Connect Gateway or supported gateway architecture.
+- **Public VIF:** provides access to supported AWS public service endpoints.
+- **Transit VIF:** connects to a Transit Gateway through a Direct Connect Gateway.
+- **Direct Connect Gateway:** enables connectivity to supported VPC gateways across regions.
+
+| Feature | Direct Connect | Site-to-Site VPN |
+| --- | --- | --- |
+| Transport | Dedicated connection | Public internet |
+| Encryption | Not inherently encrypted | IPsec encryption |
+| Latency | More predictable | Internet-dependent |
+| Provisioning | Longer | Faster |
+| Cost | Higher | Usually lower |
+| Use case | Enterprise hybrid connectivity | Encrypted network connectivity |
+
+Direct Connect should generally be paired with VPN encryption when encryption in transit is required and the Direct Connect path itself does not provide the required encryption. Redundant connections, diverse locations and backup VPN paths are important for high availability.
+
+### Bastion Host
+
+A small, hardened instance in a public subnet used as a secure "jump box" — SSH into the bastion, then SSH from there into private-subnet instances with no direct internet exposure. This project's design replaces this pattern with **SSM Session Manager** (AWS) — see Systems Management — avoiding the bastion entirely. Azure's equivalent replacement is **Azure Bastion** or `az ssh`/`az aks command invoke`.
+
+### Idle Timeouts: The Hidden Cause of Random 502s and "Connection reset"
+
+| Component | Idle timeout |
+| --- | --- |
+| AWS ALB | 60 s (configurable) |
+| AWS NLB / NAT Gateway (TCP) | \~350 s (NAT is fixed; send TCP keepalives) |
+| Azure Load Balancer | 4 min default (up to 30) |
+| Azure NAT Gateway | 4 min default (configurable) |
+
+Rules: the **app's keep-alive timeout must be longer than the load balancer's** (e.g. nginx `keepalive_timeout 75s` > ALB 60 s; gunicorn `--keep-alive`; Node `server.keepAliveTimeout`), otherwise the app closes a connection the LB thinks is alive and you get intermittent 502s. Long-lived idle connections (DB pools through NAT) need TCP keepalives below the NAT timeout.
+
+### Data Transfer Costs
+
+The bill that surprises everyone. Approximate AWS us-east-1 list prices; always confirm for your region.
+
+| Path | Cost |
+| --- | --- |
+| Internet → AWS | Free |
+| AWS → Internet | \~$0.09/GB (first 100 GB/month free) |
+| Same AZ, private IP | Free |
+| **Cross-AZ** (same region) | \~$0.01/GB **each direction** |
+| Cross-region | \~$0.02/GB |
+| Through a **NAT Gateway** | \~$0.045/GB processing **plus** the transfer itself |
+| Transit Gateway | \~$0.02/GB processing + hourly attachment |
+| S3 ↔ EC2 same region | Free; via **gateway endpoint** it also bypasses NAT |
+
+Design consequences: keep chatty services and their data in one AZ where HA allows; use **S3/DynamoDB gateway endpoints**; put a CDN in front of heavy egress; watch replication traffic (Kafka, Elasticsearch, databases) across AZs.
+
+### IPv6 in the Cloud
+
+Dual-stack VPC/VNet: each subnet gets a `/64`; **egress-only internet gateway** gives IPv6 outbound without inbound exposure; no NAT needed. With public IPv4 now billed, IPv6 reduces both cost and NAT dependence, but every dependency (SG rules, allow-lists, apps) must handle it.
+
+---
+
+## Compute — EC2 and Azure Virtual Machines
+
 ### EC2 / Azure VM Launch Basics
 
 To launch a VM you choose: an **AMI/VM image** (the OS/software to boot from), an **instance/VM size** (CPU/RAM/network), a **key pair/SSH key**, a **VPC-or-VNet and subnet**, and a **security group/NSG**.
-
-### SSH
-
-SSH (Secure Shell) is an encrypted protocol for remotely logging into another machine. `ssh -i mykey.pem ec2-user@<public-ip>` is the classic way to access an EC2 instance — though this project prefers SSM Session Manager (or, on Azure, Azure Bastion / `az ssh`) instead, avoiding an open port 22 entirely.
 
 ### AMI / VM Image
 
 A pre-configured template containing the OS, applications, and storage settings required to launch an instance — a reusable blueprint for cloning identical environments. Azure's equivalent is a **VM Image** (Marketplace, custom, or Shared Image Gallery).
 
+### SSH
+
+SSH (Secure Shell) is an encrypted protocol for remotely logging into another machine. `ssh -i mykey.pem ec2-user@<public-ip>` is the classic way to access an EC2 instance — though this project prefers SSM Session Manager (or, on Azure, Azure Bastion / `az ssh`) instead, avoiding an open port 22 entirely.
+
 ### User Data / Custom Data
 
 A script that runs automatically on an instance's first boot — installing packages, pulling config, joining a cluster — without building a fully custom image for every change. Plain text, not encrypted by default, so it should never contain secrets directly. Azure's equivalent is VM **Custom Data**/**cloud-init**.
+
+### cloud-init — First-Boot Configuration
+
+cloud-init reads **user-data** (`#!/bin/bash` script or `#cloud-config` YAML) on first boot and configures users, packages, files, and commands. It is how AMIs/VM images become *your* server.
+
+```yaml
+#cloud-config
+package_update: true
+packages: [nginx, jq]
+write_files:
+  - path: /etc/motd
+    content: "managed by cloud-init\n"
+runcmd:
+  - systemctl enable --now nginx
+```
+
+```bash
+cloud-init status --long
+sudo tail -f /var/log/cloud-init-output.log   # stdout/stderr of your user-data script (first place to look when it "didn't run")
+cloud-init analyze show                       # per-stage timing
+sudo cloud-init clean --logs && sudo reboot   # re-run on next boot while testing
+```
+
+Notes: runs **once per instance** by default; AWS user-data is limited to 16 KB; a failing script does not fail the instance, so the instance looks healthy but unconfigured. Prefer baking heavy setup into an image (see Packer under Infrastructure as Code) and keeping user-data tiny.
 
 ### Instance Metadata Service (IMDS) and Why IMDSv2 Matters
 
@@ -703,7 +976,9 @@ curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta
 # Azure IMDS: header required
 curl -s -H Metadata:true --noproxy '*' "http://169.254.169.254/metadata/instance?api-version=2021-02-01"
 ```
+
 **Security**: IMDSv1 answers a plain GET, so an **SSRF** bug in any app on the instance can fetch the role's credentials (the 2019 Capital One breach pattern). IMDSv2 requires a PUT-obtained token that SSRF usually can't produce.
+
 ```hcl
 # Terraform: enforce IMDSv2 and stop pods reaching the node's credentials
 metadata_options {
@@ -712,28 +987,8 @@ metadata_options {
   http_put_response_hop_limit = 1            # a container (extra hop) cannot reach IMDS; with IRSA/Pod Identity that's what you want
 }
 ```
+
 > Hop limit 1 can break add-ons that rely on IMDS to discover region/VPC (give them explicit flags or use IRSA). Also: **never put secrets in user-data**; it's readable through IMDS and the console.
-
-### cloud-init — First-Boot Configuration
-
-cloud-init reads **user-data** (`#!/bin/bash` script or `#cloud-config` YAML) on first boot and configures users, packages, files, and commands. It is how AMIs/VM images become *your* server.
-```yaml
-#cloud-config
-package_update: true
-packages: [nginx, jq]
-write_files:
-  - path: /etc/motd
-    content: "managed by cloud-init\n"
-runcmd:
-  - systemctl enable --now nginx
-```
-```bash
-cloud-init status --long
-sudo tail -f /var/log/cloud-init-output.log   # stdout/stderr of your user-data script (first place to look when it "didn't run")
-cloud-init analyze show                       # per-stage timing
-sudo cloud-init clean --logs && sudo reboot   # re-run on next boot while testing
-```
-Notes: runs **once per instance** by default; AWS user-data is limited to 16 KB; a failing script does not fail the instance, so the instance looks healthy but unconfigured. Prefer baking heavy setup into an image (see Packer below) and keeping user-data tiny.
 
 ### EC2 Instance Families
 
@@ -747,104 +1002,31 @@ Reading `t3.micro`: `t` = family, `3` = generation, `micro` = size. `m5.large` =
 
 **Project usage:** `variables.tf` defaults `node_instance_type = "t3.large"`; the Azure Pulumi program defaults `AZURE_AKS_VM_SIZE = "Standard_D2s_v6"` — both general-purpose, sized for a small EKS/AKS node pool rather than a specific workload profile.
 
-### Burstable Instances (T-series / Azure B-series) and CPU Credits
-
-`t3.micro`, `t3.large`, Azure `Standard_B1ms` (which this project uses) earn **CPU credits** while idle and spend them when busy. Each size has a **baseline** (e.g. t3.micro 10%, t3.large 30% per vCPU).
-- When credits hit zero, a **standard** instance is throttled to baseline (latency spikes, high `steal`); an **unlimited** instance keeps full speed and **bills surplus credits** (~$0.05 per vCPU-hour on Linux; check region). **T3/T3a/T4g default to unlimited**, so a CPU-heavy workload on a "cheap" T3 can cost more than an M5.
-- Monitor `CPUCreditBalance`, `CPUSurplusCreditBalance`, `CPUSurplusCreditsCharged` (CloudWatch) / *CPU Credits Remaining* (Azure Monitor).
-- Rule of thumb: sustained CPU above baseline → move to M/C-class; spiky/idle workloads (dev, small APIs, bastions) → burstable is great.
+#### Instance-Name Suffixes
 
 | Instance-name suffix | Meaning |
-|---|---|
+| --- | --- |
 | `a` | AMD CPU (`m6a`) |
 | `i` | Intel CPU |
-| `g` | **Graviton (ARM)** (`t4g`, `m7g`): ~20% cheaper, often faster |
+| `g` | **Graviton (ARM)** (`t4g`, `m7g`): \~20% cheaper, often faster |
 | `d` | Local NVMe instance store |
 | `n` | Enhanced networking |
 | `e` / `b` | Extra memory/storage / EBS-optimized |
 
 > ARM nodes need **multi-arch container images** (`docker buildx build --platform linux/amd64,linux/arm64`); an amd64-only image fails with `exec format error`. Check this before adopting Graviton/Ampere nodes.
 
-### Resource Tagging Strategy
+### Burstable Instances (T-series / Azure B-series) and CPU Credits
 
-A tagging convention — `Name`, `Environment`, `Owner`, `CostCenter` — applied consistently enables cost allocation, easier search/filtering, and automated policies. Azure's equivalent is resource **Tags**, set the same way.
+`t3.micro`, `t3.large`, Azure `Standard_B1ms` (which this project uses) earn **CPU credits** while idle and spend them when busy. Each size has a **baseline** (e.g. t3.micro 10%, t3.large 30% per vCPU).
 
-**Project usage:**
-
-```hcl
-# main.tf
-locals {
-  common_tags = {
-    Project     = var.app_name
-    Environment = var.environment
-    ManagedBy   = "terraform"
-  }
-}
-# provider.tf
-provider "aws" {
-  default_tags { tags = local.common_tags }
-}
-```
-
-Every AWS resource in this project inherits `common_tags` automatically via `default_tags`. The Azure Pulumi program does the equivalent manually with a `common_tags` dict (`{"app":..., "environment":..., "managed-by": "pulumi"}`) passed explicitly into each resource, since Pulumi/Azure has no provider-level "default tags" feature.
-
-### Idle Timeouts: The Hidden Cause of Random 502s and "Connection reset"
-
-| Component | Idle timeout |
-|---|---|
-| AWS ALB | 60 s (configurable) |
-| AWS NLB / NAT Gateway (TCP) | ~350 s (NAT is fixed; send TCP keepalives) |
-| Azure Load Balancer | 4 min default (up to 30) |
-| Azure NAT Gateway | 4 min default (configurable) |
-
-Rules: the **app's keep-alive timeout must be longer than the load balancer's** (e.g. nginx `keepalive_timeout 75s` > ALB 60 s; gunicorn `--keep-alive`; Node `server.keepAliveTimeout`), otherwise the app closes a connection the LB thinks is alive and you get intermittent 502s. Long-lived idle connections (DB pools through NAT) need TCP keepalives below the NAT timeout.
-
-### Data Transfer Costs (the bill that surprises everyone)
-
-Approximate AWS us-east-1 list prices; always confirm for your region.
-
-| Path | Cost |
-|---|---|
-| Internet → AWS | Free |
-| AWS → Internet | ~$0.09/GB (first 100 GB/month free) |
-| Same AZ, private IP | Free |
-| **Cross-AZ** (same region) | ~$0.01/GB **each direction** |
-| Cross-region | ~$0.02/GB |
-| Through a **NAT Gateway** | ~$0.045/GB processing **plus** the transfer itself |
-| Transit Gateway | ~$0.02/GB processing + hourly attachment |
-| S3 ↔ EC2 same region | Free; via **gateway endpoint** it also bypasses NAT |
-
-Design consequences: keep chatty services and their data in one AZ where HA allows; use **S3/DynamoDB gateway endpoints**; put a CDN in front of heavy egress; watch replication traffic (Kafka, Elasticsearch, databases) across AZs.
-
-### IPv6 in the Cloud (short version)
-
-Dual-stack VPC/VNet: each subnet gets a `/64`; **egress-only internet gateway** gives IPv6 outbound without inbound exposure; no NAT needed. With public IPv4 now billed, IPv6 reduces both cost and NAT dependence, but every dependency (SG rules, allow-lists, apps) must handle it.
-
-### DNS Gotchas
-
-- Changes "propagate" because of **TTL caching**, not magic. Lower the TTL a day **before** a migration, raise it after.
-- **Negative caching**: an NXDOMAIN answer is cached too. Creating a record right after a failed lookup can still fail for minutes.
-- CNAME can't sit at the zone apex (use Route 53 Alias / Azure alias records). **Split-horizon**: same name resolves differently inside a VPC (private hosted zone) and outside.
-- Private zones need DNS support/hostnames enabled on the VPC; Kubernetes adds `ndots:5` search-path lookups.
-
-### Subnet Sizing for Kubernetes on VPC CNI (relevant to this project)
-
-With the AWS VPC CNI every pod consumes a **real VPC IP** from the node's ENIs. A `t3.large` supports up to 3 ENIs × 12 IPs and **35 pods**, and the CNI keeps warm spare IPs. This project's private subnets are `/24` (251 usable), which fill with only a handful of nodes. Fixes: larger subnets (`/22`–`/20`) from the start, **prefix delegation** (assigns `/28` blocks), **custom networking** (pods on a secondary CIDR), or an overlay/`kubenet`-style CNI like the Azure side uses. Symptom of exhaustion: pods stuck in `ContainerCreating` with `failed to assign an IP address`.
-
-### Auto Scaling Groups / VM Scale Sets
-
-A group of instances managed together as one unit. You set a **min**, **max**, and **desired** count; the platform launches instances to reach the desired count, replaces failed ones, and can scale automatically based on demand. Azure's equivalent is a **Virtual Machine Scale Set (VMSS)**, which is what an AKS node pool is built on under the hood.
-
-### Auto Scaling Policy Types
-
-- **Target Tracking** — pick a metric and target (e.g., "keep average CPU at 50%"); the platform manages the math.
-- **Step Scaling** — specific scaling steps based on how far a metric is outside a threshold.
-- **Scheduled Scaling** — scale based on a known time pattern rather than a live metric.
+- When credits hit zero, a **standard** instance is throttled to baseline (latency spikes, high `steal`); an **unlimited** instance keeps full speed and **bills surplus credits** (\~$0.05 per vCPU-hour on Linux; check region). **T3/T3a/T4g default to unlimited**, so a CPU-heavy workload on a "cheap" T3 can cost more than an M5.
+- Monitor `CPUCreditBalance`, `CPUSurplusCreditBalance`, `CPUSurplusCreditsCharged` (CloudWatch) / *CPU Credits Remaining* (Azure Monitor).
+- Rule of thumb: sustained CPU above baseline → move to M/C-class; spiky/idle workloads (dev, small APIs, bastions) → burstable is great.
 
 ### EC2 Purchasing Options
 
 - **On-Demand** — pay per second/hour, no commitment.
-- **Reserved Instances** — 1–3 year commitment for up to ~72% discount.
+- **Reserved Instances** — 1–3 year commitment for up to \~72% discount.
 - **Savings Plans** — similar discount, flexible across instance families/regions.
 - **Spot Instances** — bid on unused capacity for up to 90% off; reclaimed with a 2-minute warning.
 - **Dedicated Hosts/Instances** — a physical server dedicated to you (licensing/compliance).
@@ -855,29 +1037,9 @@ A group of instances managed together as one unit. You set a **min**, **max**, a
 
 Controls how instances are physically placed relative to each other. **Cluster** packs instances close together for lowest latency (HPC). **Spread** keeps instances on distinct hardware to minimize simultaneous failure risk. **Partition** groups instances into logical partitions on separate hardware, isolating failure domains for large distributed systems.
 
-### IOPS
+### Instance Profile
 
-IOPS (Input/Output Operations Per Second) measures how many individual read/write operations storage can handle per second — different from raw throughput (MB/s). Many small, random operations (a busy database) are limited by IOPS; large sequential transfers (log processing) care more about throughput.
-
-### Snapshots
-
-A snapshot is a point-in-time copy of a storage volume or database, stored behind the scenes. The first snapshot copies everything; every one after is incremental — cheap and fast even for large volumes. This is how EBS backups, RDS backups, and Azure managed-disk/PostgreSQL backups all work under the hood.
-
-### EBS Snapshot vs AMI
-
-An **EBS Snapshot** backs up a single volume's data. An **AMI** is a bootable template — a snapshot of the root volume plus launch metadata needed to start a new instance. Every AMI relies on an underlying snapshot; not every snapshot is bootable as an AMI.
-
-### EBS Volume Types
-
-| Type | Best for | Notes |
-|---|---|---|
-| **gp3** | Default choice for most workloads | Baseline 3,000 IOPS / 125 MB/s, add more independently of size |
-| **gp2** | Legacy default | IOPS scales with volume size (3 IOPS/GB) |
-| **io1 / io2** | Databases needing consistent high IOPS | Most expensive, most predictable |
-| **st1** | Big sequential workloads | Cannot be a boot volume |
-| **sc1** | Rarely accessed data, lowest cost | Cannot be a boot volume |
-
-**Project usage:** `overlays/prod/storageclass.yaml` sets `gp3` as the cluster's default `StorageClass` (`ebs.csi.aws.com` provisioner, `volumeBindingMode: WaitForFirstConsumer`) — the PVCs in `app-data-pvc.yaml` and the Postgres StatefulSet's `volumeClaimTemplates` both bind against it on AWS. Azure's nearest equivalent tier is **Premium SSD v2** managed disks via the `disk.csi.azure.com` provisioner.
+The mechanism that lets an EC2 instance "have" an IAM role — a role can't attach directly to an instance; AWS wraps it in an Instance Profile (Terraform/Console usually do this automatically). Azure has no equivalent wrapper — a Managed Identity attaches to a VM/AKS node pool directly.
 
 ### Stopping, Terminating and Rebooting
 
@@ -885,90 +1047,73 @@ An **EBS Snapshot** backs up a single volume's data. An **AMI** is a bootable te
 - **Stop** — shuts down, EBS-backed data preserved, compute billing stops (storage still bills); public IP released unless Elastic.
 - **Terminate** — permanently deleted; root EBS volume deleted too by default (`delete_on_termination`).
 
-### Instance Profile
+### Auto Scaling Groups / VM Scale Sets
 
-The mechanism that lets an EC2 instance "have" an IAM role — a role can't attach directly to an instance; AWS wraps it in an Instance Profile (Terraform/Console usually do this automatically). Azure has no equivalent wrapper — a Managed Identity attaches to a VM/AKS node pool directly.
+An Auto Scaling Group is an AWS service that automatically maintains the desired number of EC2 instances based on configured capacity limits and scaling policies — a group of instances managed together as one unit. The platform launches instances to reach the desired count, replaces failed ones, and can scale automatically based on demand. Azure's equivalent is a **Virtual Machine Scale Set (VMSS)**, which is what an AKS node pool is built on under the hood.
 
-### CIDR
+An ASG has three important capacity values:
 
-| CIDR |  Total IPs | Usable IPs | Common Use |
-| ---- | ---------: | ---------: | ----------------------------- |
-| /32  |          1 |          1 | Single host/IP whitelist      |
-| /30  |          4 |          2 | Point-to-point links          |
-| /29  |          8 |          6 | Very small subnet             |
-| /28  |         16 |         14 | Small network                 |
-| /27  |         32 |         30 | Small office                  |
-| /26  |         64 |         62 | Medium subnet                 |
-| /25  |        128 |        126 | Medium subnet                 |
-| /24  |        256 |        254 | Common subnet size            |
-| /23  |        512 |        510 | Larger subnet                 |
-| /22  |       1024 |       1022 | Multiple application servers  |
-| /21  |       2048 |       2046 | Large subnet                  |
-| /20  |       4096 |       4094 | Enterprise subnet             |
-| /16  |     65,536 |     65,534 | Common VPC/VNet               |
-| /8   | 16,777,216 | 16,777,214 | Very large private network    |
+- **Minimum capacity:** the lowest number of instances permitted.
+- **Desired capacity:** the target number of instances.
+- **Maximum capacity:** the highest number of instances permitted.
 
-The `/` is the number of bits reserved for the network portion of the address.
+```hcl
+resource "aws_autoscaling_group" "app" {
+  name                = "app-asg"
+  min_size            = 2
+  desired_capacity    = 2
+  max_size            = 6
+  vpc_zone_identifier = var.private_subnet_ids
 
-```
-Host Bits = 32 − CIDR
-Total IPs = 2^(Host Bits)
+  launch_template {
+    id      = aws_launch_template.app.id
+    version = "$Latest"
+  }
+
+  health_check_type = "ELB"
+}
 ```
 
-Example: `192.168.1.0/24` → network bits = 24, host bits = 8 → 2^8 = 256 IPs.
+#### Launch Templates
 
-### CIDR Subnetting Walkthrough
+A Launch Template defines how an EC2 instance should be created: AMI ID, instance type, key pair, security groups, IAM instance profile, user data, EBS configuration, and metadata options. Launch Templates are preferred over older Launch Configurations because they support versioning and additional EC2 features.
 
-`cidrsubnet(prefix, newbits, netnum)` adds `newbits` to the prefix length and selects subnet number `netnum`. For a `/16` VPC with `newbits = 8`, the result is a `/24` subnet: index 0 → `10.0.0.0/24`, index 1 → `10.0.1.0/24`, and so on. Each `/24` provides 256 addresses (251 usable — AWS reserves 5 per subnet: network address, VPC router, DNS, future use, and broadcast). Azure reserves a similar 5 addresses per subnet for the same categories.
+#### Scaling Policies
 
-### Subnet Discovery Tags
+- **Target tracking:** maintains a target metric, such as average CPU utilization of 50% — pick a metric and target; the platform manages the math.
+- **Step scaling:** adds or removes instances according to alarm thresholds and adjustment steps — specific steps based on how far a metric is outside a threshold.
+- **Simple scaling:** performs a single scaling adjustment after an alarm.
+- **Scheduled scaling:** changes capacity at known times — a time pattern rather than a live metric.
+- **Predictive scaling:** uses historical patterns to forecast future capacity requirements.
 
-`kubernetes.io/role/elb` and `kubernetes.io/role/internal-elb` let the **AWS Load Balancer Controller** auto-discover which subnets to use for internet-facing vs internal load balancers, without manually specifying subnet IDs in every Ingress/Service. The `kubernetes.io/cluster/<name> = shared` tag scopes discovery to subnets belonging to this specific cluster. Azure's AKS instead uses the explicit `vnet_subnet_id` passed to the node pool (see `aks_subnet.id` in `__main__.py`) — no tag-based auto-discovery is needed since the subnet is wired in directly.
+#### Health Checks and Instance Replacement
 
-### NAT Gateway Cost and Alternatives
+ASGs can use EC2 health checks or Elastic Load Balancing health checks. If an instance becomes unhealthy, the ASG can terminate and replace it automatically.
 
-A NAT Gateway lets private-subnet instances initiate outbound connections without being reachable from the internet. It's fully managed and highly available, but costs roughly $0.045/hour (~$32/month) plus per-GB data processing, and is **not** Free Tier eligible. A **NAT Instance** (a small EC2 running NAT software) is Free Tier eligible but needs manual HA setup and patching. Azure's **NAT Gateway** has the same managed-service cost trade-off.
+#### Lifecycle Hooks
 
-**Project usage:** `variables.tf`'s `enable_nat_gateway` flag (default `true`) is the cost/architecture switch: when `false`, `eks.tf`'s node group uses public subnets directly (`associate_public_ip_address = !var.enable_nat_gateway`) instead of paying for a NAT Gateway.
+Lifecycle hooks allow custom actions before an instance enters service or before it terminates — registering an instance with an external system, draining connections, exporting logs, or performing application cleanup.
 
-### Security Group vs NACL
+#### Instance Refresh
 
-| Aspect | Security Group (SG) | Network ACL (NACL) |
-|---|---|---|
-| Level | Instance/ENI-level firewall | Subnet-level firewall |
-| State | Stateful — return traffic auto-allowed | Stateless — both directions must be allowed explicitly |
-| Rules | Allow only | Allow and Deny |
-| Evaluation | All rules considered together | Ordered by rule number, first match wins |
-| Default | Deny inbound, allow outbound | Custom NACL denies all until rules added |
+Instance Refresh replaces existing instances gradually when you update the Launch Template or AMI. This supports controlled infrastructure updates without manually terminating every instance.
 
-**Project usage:** `rds.tf`'s security group only allows inbound `5432` from the EKS node security group — not a CIDR block — so only traffic actually originating from a node's ENI is permitted, regardless of the node's current IP. Azure's equivalent, an **NSG**, is used the same way implicitly through the delegated-subnet + Private DNS Zone setup in `__main__.py`, which keeps the PostgreSQL Flexible Server off any public endpoint entirely.
+#### ASG Best Practices
 
-### SG-to-SG References vs CIDR Ranges
+- Distribute instances across multiple Availability Zones.
+- Use health checks and load balancer integration.
+- Configure scaling cooldowns or instance warmup.
+- Use mixed instance policies and Spot Instances where appropriate.
+- Configure instance protection carefully.
+- Monitor scaling activities and failed launches.
 
-A CIDR-based rule (allow `10.0.0.0/16`) permits traffic from *any* resource in that range, including future unrelated resources. An SG-to-SG reference (allow port 5432 from a specific security group) permits traffic only from members of that group — tightly scoped, and automatically covering any new member without a re-apply. Azure NSGs support the equivalent via **Application Security Groups (ASGs)** as a rule source/destination instead of a raw CIDR.
+**Important distinction:** an EC2 Auto Scaling Group scales EC2 instances. Kubernetes HPA scales pods. Cluster Autoscaler or Karpenter manages Kubernetes node capacity. ECS Service Auto Scaling scales ECS tasks.
 
-### VPC Flow Logs / NSG Flow Logs
-
-Capture metadata about IP traffic to/from network interfaces (source/destination IP, port, protocol, bytes, accept/reject) shipped to CloudWatch Logs or S3. No packet payloads, but essential for security auditing (port scans, unexpected egress) and troubleshooting connectivity. Azure's equivalent is **NSG Flow Logs** via Network Watcher.
-
-### Public vs Private Route Tables
-
-The **public route table** routes `0.0.0.0/0` to the Internet Gateway and associates with public subnets. The **private route table** routes `0.0.0.0/0` through the **NAT Gateway** instead — private instances can initiate outbound connections but are never directly reachable from the internet.
-
-### Internet Gateway vs NAT Gateway
-
-An **Internet Gateway (IGW)** allows **two-way** communication between public-IP instances and the internet. A **NAT Gateway** allows only **one-way initiated** (outbound) communication from private instances — it translates private IPs to its own Elastic IP and only allows return traffic for connections it originated.
-
+**Project usage:** the project currently uses EKS managed node-group autoscaling. An ASG is the underlying EC2 capacity mechanism for an ASG-backed node group.
 
 ---
 
 ## Containers & Kubernetes — EKS and AKS
-
-### Monolithic vs Microservices Architecture
-
-A **monolith** is a single application where UI, business logic, and data access are built and deployed as one unit — simple to start, but any change redeploys the whole thing, and it all scales together even if only one part is under load. **Microservices** split the application into small, independently deployable services, each owning its own functionality (often its own database) and communicating over the network. This lets teams deploy and scale independently, at the cost of added operational complexity — exactly the complexity Kubernetes exists to manage.
-
-**Project usage:** this project's `devops-app` is deployed as a single Deployment with its own Postgres, i.e. closer to a monolith in shape — Kubernetes here is used less for microservice orchestration between many services and more for the deployment, scaling, self-healing, and rollout guarantees a single app benefits from regardless.
 
 ### Containers
 
@@ -976,8 +1121,8 @@ A container packages an application with everything it needs to run (code, runti
 
 ### Container vs Virtual Machine
 
-| | VM | Container |
-|---|---|---|
+|  | VM | Container |
+| --- | --- | --- |
 | Virtualizes | Hardware (via hypervisor) | OS (shares host kernel) |
 | Includes | Full guest OS + app | Just the app + dependencies |
 | Boot time | Minutes | Seconds (often <1s) |
@@ -993,7 +1138,98 @@ An **image** is the packaged, read-only blueprint (built once, stored in a regis
 
 **Amazon ECR** is AWS's managed container registry — private by default, integrates with IAM, scans images for known vulnerabilities. **Azure Container Registry (ACR)** is the direct equivalent, integrating with Azure RBAC/Managed Identity the same way.
 
-**Project usage:** this project instead publishes to **Docker Hub** (`DOCKERHUB_USERNAME`/`DOCKER_IMAGE_TAG` in `.env.example`, pulled via `hiteshmondaldocker/devops-app` in `base/kustomization.yaml`) rather than ECR/ACR — a deliberate choice to keep the image reference identical across the local, AWS, and Azure overlays without per-cloud registry auth.
+**Project usage:** this project instead publishes to **Docker Hub** (`DOCKERHUB_USERNAME`/`DOCKER_IMAGE_TAG` in `.env.example`, pulled via `hiteshmondaldocker/devops-app` in `base/kustomization.yaml`) rather than ECR/ACR — a deliberate choice to keep the image reference identical across the local, AWS, and Azure overlays without per-cloud registry auth. ECR would be a natural AWS-specific registry option for production EKS deployments.
+
+#### ECR Advanced — Amazon Elastic Container Registry
+
+ECR is a managed Docker/OCI container image registry. Important capabilities:
+
+- Private and public repositories.
+- Image tagging and immutable tags.
+- Image scanning for known vulnerabilities.
+- Lifecycle policies to expire old images.
+- Cross-region and cross-account image replication.
+- IAM-based push and pull permissions.
+- Repository policies for cross-account access.
+
+**Authentication:** Docker must authenticate before pushing images.
+
+```bash
+aws ecr get-login-password --region ap-south-1 \
+  | docker login \
+    --username AWS \
+    --password-stdin 123456789012.dkr.ecr.ap-south-1.amazonaws.com
+```
+
+**Build and push:**
+
+```bash
+aws ecr create-repository --repository-name devops-app
+
+docker build -t devops-app .
+
+docker tag devops-app:latest \
+  123456789012.dkr.ecr.ap-south-1.amazonaws.com/devops-app:latest
+
+docker push \
+  123456789012.dkr.ecr.ap-south-1.amazonaws.com/devops-app:latest
+```
+
+**ECR security best practices:**
+
+- Enable image scanning.
+- Prefer immutable release tags or image digests.
+- Use least-privilege IAM policies.
+- Separate development and production repositories where appropriate.
+- Enable lifecycle policies to control storage costs.
+- Use cross-account repository policies carefully.
+
+For private ECR access from private subnets, configure the appropriate ECR API and Docker registry interface endpoints, plus an S3 gateway endpoint for image-layer downloads.
+
+### Amazon ECS and Fargate
+
+**Amazon ECS** (Elastic Container Service) is AWS's fully managed container orchestration service — it runs and manages Docker containers without requiring you to operate Kubernetes. It is simpler than Kubernetes, has no control-plane fee, and is tightly integrated with IAM/ALB/CloudWatch. EKS runs standard, portable Kubernetes with a fixed control-plane fee; ECS uses AWS-proprietary task definitions/services, not portable, but free to run (you only pay for underlying compute). Azure's nearest equivalent to ECS (without Kubernetes at all) is **Azure Container Apps** or **Azure Container Instances**.
+
+#### ECS Components
+
+- **Cluster** — a logical grouping of compute capacity and container workloads.
+- **Task Definition** — a JSON blueprint describing which container images to run, CPU/memory requirements, environment variables, IAM roles, networking and logging — the ECS equivalent of a Kubernetes Pod spec.
+- **Task** — a running instance of a task definition. It can contain one or multiple related containers.
+- **Service** — maintains a desired number of running tasks, replaces unhealthy tasks, supports rolling deployments, and optionally attaches to a load balancer — the ECS equivalent of a Deployment.
+- **Container Instance** — an EC2 instance registered with an ECS cluster when using EC2 launch type.
+- **Capacity Provider** — manages the underlying compute capacity, including EC2 Auto Scaling Groups or Fargate.
+
+#### ECS Launch Types (EC2 vs Fargate)
+
+1. **EC2 launch type:** you provision and manage the EC2 instances, instance types, capacity and operating-system maintenance. ECS schedules containers on those instances.
+2. **Fargate launch type:** serverless containers. AWS manages the underlying compute infrastructure and runs each task in isolated compute (each pod in its own micro-VM on EKS Fargate); you specify CPU and memory for each task, billed per vCPU/memory-second used.
+
+#### ECS vs EKS
+
+| Feature | ECS | EKS |
+| --- | --- | --- |
+| Orchestrator | AWS-native | Kubernetes |
+| Complexity | Lower | Higher |
+| Portability | AWS-oriented | Kubernetes ecosystem |
+| Control plane | AWS-managed | AWS-managed Kubernetes control plane |
+| Networking | awsvpc and other modes | Kubernetes networking/CNI |
+| Best for | AWS-native container workloads | Kubernetes-based platforms |
+
+#### ECS Task Networking
+
+With `awsvpc` networking, every ECS task receives its own Elastic Network Interface and private IP address. Security groups can be assigned directly to tasks. This is useful for microservices because each task can have independent network permissions.
+
+#### ECS Service Auto Scaling
+
+ECS services can scale task counts using Application Auto Scaling based on average CPU utilization, average memory utilization, ALB request count per target, CloudWatch custom metrics, or scheduled scaling. The ECS service controls the number of tasks, while its capacity provider or EC2 Auto Scaling Group supplies the underlying compute capacity.
+
+#### ECS Deployment Strategies
+
+- Rolling deployment: gradually replaces old tasks with new tasks.
+- Blue/green deployment: deploys a separate version and shifts traffic after validation.
+- Circuit breaker: detects failed deployments and can automatically roll back.
+
+**Project usage:** this project uses neither ECS nor Fargate — Kubernetes (EKS/AKS/local) was chosen specifically for portability across clouds and a local cluster from one set of manifests, which a proprietary orchestrator like ECS or Container Apps would not provide. ECS would be an alternative for running the same containerized application without managing Kubernetes resources.
 
 ### Kubernetes
 
@@ -1021,13 +1257,17 @@ A **Deployment** manages identical, interchangeable pod replicas — any replica
 
 Both store configuration pods can read as environment variables or mounted files. A **ConfigMap** is for non-sensitive config (feature flags, URLs). A **Secret** is for sensitive data (passwords, tokens) — structurally similar, but not shown in plain text by `kubectl get`, and benefits from etcd `encryption_config`. Neither is encrypted by default without extra configuration.
 
-**Project usage:** `configmap.yaml` holds `APP_ENV`, `LOG_LEVEL`, cache/rate-limit tuning; `secrets.yaml` holds `DB_USERNAME`/`DB_PASSWORD`/`JWT_SECRET`/`API_KEY`/`SESSION_SECRET` as placeholders that `deploy_kubernetes.sh` overwrites at deploy time (local/direct mode) or that `seal_secrets.sh` encrypts into a `SealedSecret` ahead of time (prod/GitOps mode) — see the Sealed Secrets topic below.
+**Project usage:** `configmap.yaml` holds `APP_ENV`, `LOG_LEVEL`, cache/rate-limit tuning; `secrets.yaml` holds `DB_USERNAME`/`DB_PASSWORD`/`JWT_SECRET`/`API_KEY`/`SESSION_SECRET` as placeholders that `deploy_kubernetes.sh` overwrites at deploy time (local/direct mode) or that `seal_secrets.sh` encrypts into a `SealedSecret` ahead of time (prod/GitOps mode) — see Sealed Secrets under Key Management and Secrets.
 
 ### HPA vs Cluster/Node Autoscaler
 
 **HPA** scales the *number of pod replicas* based on CPU/memory/custom metrics — entirely inside the cluster, with no idea whether there's node capacity to fit new pods. The **Cluster Autoscaler** (AWS) / **AKS cluster autoscaler** (Azure) is the one that adds/removes actual nodes when pods can't be scheduled. In production the two work together: HPA decides "we need more pods," the node autoscaler makes room.
 
 **Project usage:** `hpa.yaml` scales `devops-app` between `minReplicas: 2` and `maxReplicas: 10` on CPU (70%) and memory (80%) utilization, with asymmetric `behavior` (scale-up reacts instantly, scale-down waits 300s to avoid flapping); `eks.tf`'s node group and the Azure Pulumi `agent_pool_profiles` both set `enable_auto_scaling` with matching `min_count`/`max_count` so there's always node room for the HPA's decisions. The local overlay scales this down to `minReplicas: 1`/`maxReplicas: 3` to fit a laptop-sized cluster.
+
+#### Cluster Autoscaler IAM Safety
+
+The Cluster Autoscaler watches for unschedulable pods and increases node-group desired size (scale-out), and identifies underutilized nodes to safely drain/terminate (scale-in). Its IAM policy restricts destructive actions (`SetDesiredCapacity`, `TerminateInstanceInAutoScalingGroup`) behind a `Condition` requiring the `k8s.io/cluster-autoscaler/<cluster-name> = owned` tag, so it can never touch an unrelated ASG in the same account.
 
 ### kubectl
 
@@ -1044,7 +1284,7 @@ The command-line tool for interacting with any Kubernetes cluster's API server �
 
 ### EKS Control Plane Cost vs AKS Free Tier
 
-The EKS control plane (API server, etcd, scheduler, controller-manager) runs as a dedicated, highly available, multi-AZ managed service per cluster — a fixed ~$0.10/hour (~$73/month) cost independent of size, unlike serverless services billed per invocation. **AKS**, by contrast, offers a **Free** control-plane SKU tier at no charge for the control plane itself (you still pay for the node VMs) — one reason this project's Azure Pulumi stack can stay closer to $0 than its AWS/EKS counterpart.
+The EKS control plane (API server, etcd, scheduler, controller-manager) runs as a dedicated, highly available, multi-AZ managed service per cluster — a fixed ≈ $0.10/hour (≈ $73/month) cost independent of size, unlike serverless services billed per invocation. **AKS**, by contrast, offers a **Free** control-plane SKU tier at no charge for the control plane itself (you still pay for the node VMs) — one reason this project's Azure Pulumi stack can stay closer to $0 than its AWS/EKS counterpart.
 
 **Project usage:** `__main__.py` sets `sku=containerservice.ManagedClusterSKUArgs(name="Base", tier="Free")` explicitly for this reason; `outputs.tf`'s `estimated_free_tier_note` documents the EKS-side cost instead, since AWS has no equivalent free control-plane tier.
 
@@ -1064,27 +1304,6 @@ Enables **envelope encryption of Kubernetes Secrets** at the etcd storage layer 
 `api`, `audit`, `authenticator`, `controllerManager`, `scheduler`. The **audit** log records every API request, who made it, and what changed — critical for incident investigation and compliance. `authenticator` logs show IAM-to-RBAC authentication attempts, useful for diagnosing "unauthorized" errors.
 
 **Project usage:** `eks.tf` enables only `cluster_enabled_log_types = ["api", "authenticator"]`, not `audit` — a deliberate cost/verbosity trade-off worth revisiting for a compliance-sensitive deployment. AKS's equivalent is enabling **diagnostic settings** on the cluster to ship `kube-audit`/`kube-apiserver` logs to Log Analytics.
-
-### Implicit Resource Dependencies (`depends_on`)
-
-Terraform infers dependency ordering automatically from attribute references, but it does **not** infer dependencies through policy-attachment resources that only reference an already-existing role ARN — so an explicit `depends_on` is required wherever creation order matters but no attribute reference exists.
-
-**Project usage:**
-
-```hcl
-# backup_verifier.tf
-resource "aws_s3_bucket_notification" "backup_uploaded" {
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.backup_verifier[0].arn
-    events              = ["s3:ObjectCreated:*"]
-  }
-  # S3 validates the permission when creating the notification, but nothing
-  # here references the permission resource itself:
-  depends_on = [aws_lambda_permission.s3_invoke_backup_verifier]
-}
-```
-
-Without the explicit `depends_on`, S3 could reject the notification config because the invoke permission doesn't exist yet. `aws_eks_addon.ebs_csi` similarly declares `depends_on = [module.eks]` since nothing about the addon's attributes references the cluster module directly. Pulumi's equivalent, `ResourceOptions(depends_on=[...])`, is used the same way throughout the Azure program — e.g. `dns_vnet_link` before `pg_server`, and `account_ready` (a `Sleep` resource) before the storage container, since a freshly created storage account isn't always immediately consistent.
 
 ### Node Group Types — Self-Managed, Managed, Fargate
 
@@ -1132,14 +1351,6 @@ cluster_addons = {
 
 `enableNetworkPolicy = "true"` on the VPC CNI addon is what makes `overlays/prod/network-policy.yaml`'s `NetworkPolicy` object actually enforced on EKS — without it, VPC CNI ignores `NetworkPolicy` objects entirely. `__main__.py` uses `network_plugin="kubenet"` for AKS instead of Azure CNI, trading some of Azure CNI's native-VNet-IP pod networking for simpler subnet sizing on a small, free-tier-sized cluster; `overlays/prod-azure/network-policy.yaml` still relies on AKS's built-in network policy engine to enforce it.
 
-### AWS Load Balancer Controller vs AKS Application Routing / Ingress-Nginx
-
-The AWS Load Balancer Controller watches `Ingress` and `Service (type=LoadBalancer)` resources and provisions matching ALBs/NLBs, attaching target groups pointing at pod IPs. A dedicated, tightly scoped IAM policy (rather than a broad managed policy) follows least privilege, restricting the controller to resources it created and tagged itself. This project instead runs a plain **ingress-nginx** controller (`ingressClassName: nginx` throughout every overlay) rather than the AWS Load Balancer Controller or AKS's Application Routing add-on — keeping the Ingress object identical across every environment, cloud or local.
-
-### Cluster Autoscaler IAM Safety
-
-The Cluster Autoscaler watches for unschedulable pods and increases node-group desired size (scale-out), and identifies underutilized nodes to safely drain/terminate (scale-in). Its IAM policy restricts destructive actions (`SetDesiredCapacity`, `TerminateInstanceInAutoScalingGroup`) behind a `Condition` requiring the `k8s.io/cluster-autoscaler/<cluster-name> = owned` tag, so it can never touch an unrelated ASG in the same account.
-
 ### API Server Public/Private Access
 
 `endpoint_public_access`/`endpoint_private_access` control how the Kubernetes API server is reachable. `endpoint_public_access = true` with no restricted `public_access_cidrs` means the API server is reachable from any IP on the internet (still requiring valid IAM/RBAC credentials, but exposed to scanning attempts).
@@ -1152,30 +1363,11 @@ Kubernetes RBAC (`Role`, `ClusterRole`, `RoleBinding`) controls what an *already
 
 **Project usage:** `eks.tf` uses the newer `access_entries` mechanism, mapping an optional `console_principal_arn` to `AmazonEKSClusterAdminPolicy`, plus `enable_cluster_creator_admin_permissions = true` for the applying identity. AKS's equivalent is enabling **Azure AD integration** with Azure RBAC for Kubernetes Authorization, mapping Azure AD identities to Kubernetes RBAC roles the same way — not currently configured in `__main__.py`, which relies on the exported kubeconfig's client credentials instead.
 
-### ECS and Fargate
-
-**Amazon ECS** is AWS's own container orchestration service — simpler than Kubernetes, no control-plane fee, tightly integrated with IAM/ALB/CloudWatch. EKS runs standard, portable Kubernetes with a fixed control-plane fee; ECS uses AWS-proprietary task definitions/services, not portable, but free to run (you only pay for underlying compute). Azure's nearest equivalent to ECS (without Kubernetes at all) is **Azure Container Apps** or **Azure Container Instances**.
-
-### ECS Task Definition vs ECS Service
-
-A **Task Definition** is a JSON blueprint describing one or more containers to run together — the ECS equivalent of a Kubernetes Pod spec. An **ECS Service** keeps a specified number of Task instances running, replacing failed ones and optionally attaching to a load balancer — the ECS equivalent of a Deployment.
-
-### EC2 vs Fargate Launch Type on ECS
-
-**EC2 launch type** — you provision and manage the instances tasks run on. **Fargate launch type** — fully serverless; AWS runs each task in isolated compute with no instances to manage, billed per vCPU/memory-second used.
-
-**Project usage:** this project uses neither ECS nor Fargate — Kubernetes (EKS/AKS/local) was chosen specifically for portability across clouds and a local cluster from one set of manifests, which a proprietary orchestrator like ECS or Container Apps would not provide.
-
-
 ---
 
 ## Databases — RDS and Azure Database for PostgreSQL
 
 Supported RDS engines: MySQL, PostgreSQL, Oracle, SQL Server, MariaDB, and Aurora. Azure's managed relational offerings are **Azure Database for PostgreSQL** (Flexible Server, used by this project), **Azure Database for MySQL**, and **Azure SQL Database**.
-
-### Amazon Aurora
-
-Aurora is AWS's own MySQL/PostgreSQL-compatible engine re-engineered for the cloud — storage automatically replicated 6 ways across 3 AZs, scales to 128TB without downtime, and read replicas add much faster than standard RDS. Costs more than vanilla RDS but is often chosen for higher availability/performance at scale. This project uses plain RDS PostgreSQL rather than Aurora, favoring the simpler/cheaper baseline over Aurora's extra availability.
 
 ### Relational Databases
 
@@ -1183,7 +1375,60 @@ A relational database stores data in tables of rows and columns, linked ("relate
 
 ### Relational vs Non-Relational Databases
 
-Relational databases (RDS, Azure Database for PostgreSQL) enforce a fixed schema and strong consistency, excelling at complex multi-table joins. NoSQL databases (DynamoDB, Cosmos DB) trade some structure/consistency for massive horizontal scalability and flexible, schema-less data.
+Relational databases (RDS, Azure Database for PostgreSQL) enforce a fixed schema and strong consistency, excelling at complex multi-table joins. NoSQL databases (DynamoDB, Cosmos DB) trade some structure/consistency for massive horizontal scalability and flexible, schema-less data. See NoSQL & Data Services for the NoSQL side.
+
+### Amazon Aurora
+
+Aurora is AWS's own MySQL/PostgreSQL-compatible engine re-engineered for the cloud — storage automatically replicated 6 ways across 3 AZs, scales to 128TB without downtime, and read replicas add much faster than standard RDS. Costs more than vanilla RDS but is often chosen for higher availability/performance at scale. It is designed for high availability, performance and distributed storage.
+
+#### Aurora Architecture
+
+Aurora separates compute from storage.
+
+- **DB Cluster:** logical database environment.
+- **Writer Instance:** handles read/write operations.
+- **Reader Instances:** handle read-only queries.
+- **Cluster Endpoint:** connects applications to the writer.
+- **Reader Endpoint:** distributes read connections across available readers.
+- **Instance Endpoint:** connects to a specific DB instance.
+
+Aurora storage is distributed across multiple Availability Zones.
+
+#### Aurora vs Standard RDS
+
+| Feature | Standard RDS | Aurora |
+| --- | --- | --- |
+| Storage | Engine-specific storage | Distributed cluster storage |
+| Replication | Engine-dependent | Integrated storage replication |
+| Read scaling | Read replicas | Aurora readers |
+| Failover | Multi-AZ mechanisms | Cluster-level failover |
+| Endpoints | Instance/cluster dependent | Writer and reader endpoints |
+| Cost | Often lower for small workloads | Can be higher, depending on configuration |
+
+#### Aurora High Availability
+
+Aurora maintains multiple copies of data across Availability Zones. When the writer fails, Aurora can promote an available reader to become the new writer. Applications should use the cluster endpoint and implement connection retry logic because failover can interrupt existing connections.
+
+#### Aurora Serverless v2
+
+Aurora Serverless v2 automatically adjusts database capacity based on workload demand using Aurora Capacity Units (ACUs). It is useful for variable workloads where fixed database capacity may be inefficient.
+
+#### Aurora Global Database
+
+Aurora Global Database replicates data across AWS regions with low replication latency. It is useful for disaster recovery and geographically distributed read workloads.
+
+#### Aurora Best Practices
+
+- Use private subnets.
+- Enable encryption using KMS.
+- Configure automated backups.
+- Monitor connections and storage.
+- Use reader endpoints for read-heavy applications.
+- Configure deletion protection.
+- Test failover and restoration.
+- Use connection pooling to avoid excessive connections.
+
+**Project usage:** this project uses plain RDS PostgreSQL rather than Aurora, favoring the simpler/cheaper baseline over Aurora's extra availability. Aurora would be an alternative if its availability, scaling or performance characteristics justified the additional cost.
 
 ### Storage Encryption at Rest
 
@@ -1197,50 +1442,25 @@ Relational databases (RDS, Azure Database for PostgreSQL) enforce a fixed schema
 
 **Project usage:** `variables.tf` defaults `db_multi_az = false`; `__main__.py` sets `high_availability=dbforpostgresql.HighAvailabilityArgs(mode="Disabled")` — both disabled for the same free-tier cost reason (see below), with both able to flip on for real production use.
 
+#### Multi-AZ Cost Trade-off
+
+Multi-AZ roughly **doubles** RDS compute/storage cost (a fully provisioned, synchronously-replicating standby) and is explicitly **not** Free Tier eligible. Disabled by default to stay within free-tier cost bounds for a learning/demo environment; should be enabled for real production workloads where downtime during an AZ failure is unacceptable. Azure zone-redundant HA carries the same roughly-doubled cost for the same reason, which is why `__main__.py` also defaults it off.
+
 ### Automated Backups vs Manual Snapshots
 
 **Automated Backups** run daily in a configurable window, retained 1–35 days, and enable **point-in-time recovery** — but are deleted when the instance is deleted unless a final snapshot is taken. **Manual Snapshots** are on-demand, kept indefinitely, and survive instance deletion — used for long-term retention or a known-good checkpoint. Azure Database for PostgreSQL's automated backups work the same way, retained per `backup_retention_days`, with **geo-redundant backup** as an additional opt-in replicating those backups cross-region automatically.
 
-**Project usage:** `rds.tf` sets `backup_retention_period = var.db_backup_retention_days` (default 7 days, via `variables.tf`); `__main__.py` sets `backup=dbforpostgresql.BackupArgs(backup_retention_days=7, geo_redundant_backup="Enabled")` — the Azure side additionally turns on geo-redundancy by default, something the AWS side handles separately via `dr.tf`'s automated-backup replication instead (see Disaster Recovery below).
-
-### Multi-AZ Cost Trade-off
-
-Multi-AZ roughly **doubles** RDS compute/storage cost (a fully provisioned, synchronously-replicating standby) and is explicitly **not** Free Tier eligible. Disabled by default to stay within free-tier cost bounds for a learning/demo environment; should be enabled for real production workloads where downtime during an AZ failure is unacceptable. Azure zone-redundant HA carries the same roughly-doubled cost for the same reason, which is why `__main__.py` also defaults it off.
+**Project usage:** `rds.tf` sets `backup_retention_period = var.db_backup_retention_days` (default 7 days, via `variables.tf`); `__main__.py` sets `backup=dbforpostgresql.BackupArgs(backup_retention_days=7, geo_redundant_backup="Enabled")` — the Azure side additionally turns on geo-redundancy by default, something the AWS side handles separately via `dr.tf`'s automated-backup replication instead (see Disaster Recovery).
 
 ### HA vs Backup vs Disaster Recovery — Three Different Things
 
 | Mechanism | Protects against | Does **not** protect against |
-|---|---|---|
+| --- | --- | --- |
 | **High availability** (Multi-AZ, zone-redundant HA) | Instance/AZ failure | `DROP TABLE`, bad migration, ransomware (the mistake is **replicated instantly**) |
 | **Backups / point-in-time recovery** | Human error, logical corruption, deletion | Region loss (unless backups are copied cross-region) |
 | **Disaster recovery** (cross-region replica/backups, pilot light) | Region/provider-level outage | Slow recovery if never rehearsed |
 
-Rough RDS numbers: Multi-AZ failover ~60–120 s with RPO≈0; **PITR** restores to a *new* instance (not in place), latest restorable point is typically within ~5 minutes, so the **RTO is hours** for large databases; cross-region replica promotion has RPO of seconds to minutes (async lag). Setting backup retention to 0 disables PITR entirely.
-
-### Connection Management
-
-Each Postgres connection costs memory and `max_connections` scales with instance size. Many app replicas, Lambdas, or pods exhaust connections quickly. Put a **pooler** in front (**PgBouncer**, **RDS Proxy**) and size pools deliberately: `pods × pool_size ≤ max_connections − reserved`. Autoscaling the app can take the database down.
-
-### Schema Migrations and Upgrades
-
-- Don't run migrations from every replica at startup. Run them once as a **Job/init step** from CI.
-- **Expand → migrate → contract**: add nullable column / new table, deploy code that writes both, backfill, switch reads, then drop the old structure in a later release. Keeps rollbacks safe.
-- Plan **major version upgrades** (RDS Blue/Green deployments or dump/restore); **static parameter changes need a reboot**; set maintenance windows; old engine versions past community support incur **Extended Support fees**.
-
-### Restore Drill for This Project's `pg_dump` Backups
-
-```bash
-aws s3 ls s3://devops-app-files-ap-south-1/postgres/ | tail -3
-aws s3 cp s3://devops-app-files-ap-south-1/postgres/<file>.sql.gz .
-createdb -h <SCRATCH_HOST> restore_test
-gunzip -c <file>.sql.gz | psql "host=<SCRATCH_HOST> dbname=restore_test user=<USER> sslmode=require" -v ON_ERROR_STOP=1
-psql ... -c "SELECT count(*) FROM <important_table>;"      # sanity-check the data
-```
-Restore into a **scratch** database/instance, verify, record the time it took (that's your real RTO), and schedule this quarterly. `backup_verifier.py` proves the file is a valid dump, not that your app recovers from it.
-
-### Performance Insights / Query Performance Insight
-
-**Performance Insights** (RDS) visualizes database load broken down by SQL statement, wait event, host, or user, without manual log analysis — helps quickly answer "why is my database slow right now." On `db.t3.micro`, 7-day retention is free. Azure's equivalent is **Query Performance Insight** within Azure Database for PostgreSQL, offering similar top-queries and wait-statistics views at no extra cost on Flexible Server.
+Rough RDS numbers: Multi-AZ failover \~60–120 s with RPO≈0; **PITR** restores to a *new* instance (not in place), latest restorable point is typically within \~5 minutes, so the **RTO is hours** for large databases; cross-region replica promotion has RPO of seconds to minutes (async lag). Setting backup retention to 0 disables PITR entirely.
 
 ### `skip_final_snapshot` and `final_snapshot_identifier`
 
@@ -1261,11 +1481,9 @@ Both default to the disposable/learning-friendly setting; flipping `db_skip_fina
 
 `deletion_protection = true` makes the RDS API itself reject any delete request until the flag is explicitly turned off first. `skip_final_snapshot` only controls whether a snapshot is taken **during** an already-permitted deletion. Together: you can't accidentally delete the DB without first consciously disabling protection, and a deliberate deletion still captures a final snapshot. Azure Database for PostgreSQL's nearest equivalent is Azure's generic resource-lock feature (a `CanNotDelete` lock on the server resource) rather than a database-engine-level flag.
 
-### Secrets Manager / Key Vault vs Plaintext Terraform Variables
+### Connection Management
 
-Terraform variables (even `sensitive = true`) are still written in **plaintext into the state file** — sensitivity only suppresses console/log output, not storage. **Secrets Manager** stores credentials encrypted with KMS, supports automatic rotation, and gives applications a single `GetSecretValue` API call. Azure's equivalent, **Key Vault**, works the same way with `GetSecret` and Managed Identity-based access.
-
-**Project usage:** this project does not currently use Secrets Manager or Key Vault for the database password — `db_password`/`DB_PASSWORD` flows from `.env` through `TF_VAR_db_password`/Pulumi's `get_secret()` directly into Terraform/Pulumi state, and separately into the cluster as a Kubernetes Secret (plaintext-in-state, `sensitive = true` in `variables.tf`, `Output.secret()` in Pulumi). Adopting Secrets Manager/Key Vault plus the CSI Secrets Store driver would close this gap.
+Each Postgres connection costs memory and `max_connections` scales with instance size. Many app replicas, Lambdas, or pods exhaust connections quickly. Put a **pooler** in front (**PgBouncer**, **RDS Proxy**) and size pools deliberately: `pods × pool_size ≤ max_connections − reserved`. Autoscaling the app can take the database down.
 
 ### DB Parameter Groups and `max_connections`
 
@@ -1279,19 +1497,142 @@ Forces all client connections to use SSL/TLS, rejecting unencrypted ones. Even "
 
 **Project usage:** `overlays/prod/backup-config-patch.yaml` and `overlays/prod-azure/backup-config-patch.yaml` both set `PGSSLMODE: "require"` in the ConfigMap consumed by the `postgres-backup` CronJob's `pg_dump` step — enforcing encrypted connections for backups on both clouds even though neither `rds.tf` nor `__main__.py` sets an explicit `rds.force_ssl` parameter group value for the application's own runtime connections.
 
+### Schema Migrations and Upgrades
+
+- Don't run migrations from every replica at startup. Run them once as a **Job/init step** from CI.
+- **Expand → migrate → contract**: add nullable column / new table, deploy code that writes both, backfill, switch reads, then drop the old structure in a later release. Keeps rollbacks safe.
+- Plan **major version upgrades** (RDS Blue/Green deployments or dump/restore); **static parameter changes need a reboot**; set maintenance windows; old engine versions past community support incur **Extended Support fees**.
+
+### Restore Drill for This Project's `pg_dump` Backups
+
+```bash
+aws s3 ls s3://devops-app-files-ap-south-1/postgres/ | tail -3
+aws s3 cp s3://devops-app-files-ap-south-1/postgres/<file>.sql.gz .
+createdb -h <SCRATCH_HOST> restore_test
+gunzip -c <file>.sql.gz | psql "host=<SCRATCH_HOST> dbname=restore_test user=<USER> sslmode=require" -v ON_ERROR_STOP=1
+psql ... -c "SELECT count(*) FROM <important_table>;"      # sanity-check the data
+```
+
+Restore into a **scratch** database/instance, verify, record the time it took (that's your real RTO), and schedule this quarterly. `backup_verifier.py` proves the file is a valid dump, not that your app recovers from it.
+
+### Performance Insights / Query Performance Insight
+
+**Performance Insights** (RDS) visualizes database load broken down by SQL statement, wait event, host, or user, without manual log analysis — helps quickly answer "why is my database slow right now." On `db.t3.micro`, 7-day retention is free. Azure's equivalent is **Query Performance Insight** within Azure Database for PostgreSQL, offering similar top-queries and wait-statistics views at no extra cost on Flexible Server.
+
+### AWS Database Migration Service (DMS)
+
+AWS DMS helps migrate databases between different database engines, environments and AWS services. It supports homogeneous migrations, such as PostgreSQL to PostgreSQL, and heterogeneous migrations, such as Oracle to PostgreSQL, subject to engine and feature compatibility.
+
+**Core components:**
+
+- **Replication Instance:** compute capacity used by the migration process in traditional DMS configurations.
+- **Source Endpoint:** connection details for the source database.
+- **Target Endpoint:** connection details for the destination database.
+- **Replication Task:** defines the migration operation.
+- **Full Load:** copies existing data.
+- **CDC (Change Data Capture):** captures ongoing changes made after migration begins.
+
+**Migration types:** Full Load (migrates existing database contents); Full Load + CDC (migrates existing data and then continuously applies changes); CDC Only (captures ongoing changes without an initial full load).
+
+```text
+Source Database
+      |
+AWS DMS
+      |
+Full Load + CDC
+      |
+Target Database
+      |
+Application Cutover
+```
+
+**DMS best practices:**
+
+- Test source and target connectivity before migration.
+- Check engine compatibility and data types.
+- Monitor replication latency.
+- Ensure sufficient storage and replication capacity.
+- Validate row counts and data consistency.
+- Test application compatibility before cutover.
+- Plan rollback and downtime windows.
+- Secure database credentials and network access.
+
+**DMS vs AWS SCT:** AWS Schema Conversion Tool (SCT) helps convert database schemas and code when migrating between different database engines. DMS primarily moves the data and replicates changes. They can be used together for heterogeneous migrations.
+
+### Amazon Redshift vs Azure Synapse Analytics
+
+RDS/Azure Database for PostgreSQL are built for **OLTP** (many small, fast transactional reads/writes). **Redshift** is a managed **data warehouse** for **OLAP** (large, complex analytical queries scanning millions/billions of rows) using columnar storage and massively parallel execution. **Azure Synapse Analytics** is the direct equivalent on Azure. This project has no analytical/warehouse workload, so neither is provisioned.
+
+### CAP Theorem
+
+A distributed system can only guarantee two of three properties during a network partition: **Consistency** (every read sees the latest write), **Availability** (every request gets a response), and **Partition tolerance** (the system keeps working despite network splits). RDS/Azure Database for PostgreSQL (traditional, strongly-consistent, single-primary systems) prioritize consistency, potentially sacrificing availability during a failover window. DynamoDB/Cosmos DB default to **eventual consistency** for reads (favoring availability and partition tolerance) but offer opt-in **strongly consistent reads**, consuming more capacity in exchange for guaranteed up-to-date data.
+
 ---
 
-## Key Management — KMS and Azure Key Vault
+## Key Management, Secrets and Certificates — KMS, Key Vault, ACM and Vault
 
 AWS KMS is a fully managed, FIPS-validated service for creating and controlling cryptographic keys, deeply integrated with over 100 AWS services (S3, EBS, RDS) to encrypt data at rest, generate signatures, and manage key lifecycles. **Azure Key Vault** plays the same role for Azure — Key Vault Keys for cryptographic operations, Key Vault Secrets for credentials, and Key Vault Certificates for TLS material, all integrated with Managed Identity.
+
+### Encryption
+
+Encryption scrambles data using a **key** so only someone with the correct key can decrypt it. **Encryption at rest** protects stored data; **encryption in transit** protects data while moving across a network. Both are necessary; encrypting only one leaves a real gap.
+
+- **At rest** protects stored data — implemented via KMS-backed RDS `storage_encrypted` and default-encrypted Azure Storage/PostgreSQL.
+- **In transit** protects data moving across a network — implemented via `PGSSLMODE=require` (DB connections) and HTTPS/TLS at the ingress or ALB/Application Gateway.
+
+**Project usage:** `rds.tf` sets `storage_encrypted = true` with a customer-managed KMS key (`aws_kms_key.rds`); the Azure side's `storage.py` and `__main__.py` use TLS-only storage accounts (`minimum_tls_version = "TLS1_2"`) and PostgreSQL Flexible Server with SSL enforced (`PGSSLMODE: "require"` in `backup-config-patch.yaml`).
 
 ### Envelope Encryption
 
 Rather than encrypting large data directly with a KMS key (which never leaves the service and is rate-limited), KMS generates a unique **data key** per operation. The data key encrypts the actual data locally (fast, unlimited volume); the data key itself is then encrypted ("wrapped") by the KMS key and stored alongside the data. To decrypt, KMS unwraps the data key (a lightweight API call), and the data key decrypts the payload locally. This is exactly the mechanism behind EKS secrets encryption and RDS storage encryption. Azure Key Vault implements the identical pattern for Azure Storage/SQL/PostgreSQL encryption.
 
-### Key Rotation
+### AWS-Owned, AWS-Managed and Customer-Managed Keys
+
+- **AWS-owned keys:** owned and managed by AWS; customers do not control their lifecycle or policies.
+- **AWS-managed keys:** created and managed by AWS for a service in the customer's account, with limited customer control.
+- **Customer-managed keys:** created or imported and controlled by the customer, including key policies, rotation settings and deletion scheduling.
+
+### KMS Key Policies
+
+Every KMS key has a key policy controlling who can use and administer it. An IAM Allow policy alone is not sufficient if the key policy does not enable the required access.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "AllowAppRoleDecrypt",
+    "Effect": "Allow",
+    "Principal": {
+      "AWS": "arn:aws:iam::123456789012:role/app-role"
+    },
+    "Action": [
+      "kms:Decrypt",
+      "kms:DescribeKey"
+    ],
+    "Resource": "*"
+  }]
+}
+```
+
+The key policy must also retain an appropriate administration and recovery path.
+
+### KMS Grants
+
+A grant provides delegated, often temporary or service-specific, permissions to use a KMS key without modifying the entire key policy. Grants can be constrained by operations and encryption context.
+
+### Encryption Context
+
+Encryption context is additional non-secret, authenticated metadata supplied during encryption and decryption. The same context must be supplied for decryption. It can also be used in policy conditions to restrict key usage. Never place passwords, API keys or other secrets in encryption context because it is not secret data.
+
+### Multi-Region Keys
+
+Multi-Region KMS keys have related key material and identifiers across multiple AWS regions. They are useful for applications requiring compatible encryption and decryption across regions, but they do not automatically replicate encrypted data or replace disaster recovery planning.
+
+### Key Rotation and Key Replacement
 
 `enable_key_rotation = true` on a KMS key enables **automatic annual rotation of the underlying key material**, while the key's ARN/ID and all policies/grants referencing it stay unchanged. Old key material is retained indefinitely (as long as the key exists), so data encrypted under a previous year's material can still be decrypted transparently. Azure Key Vault supports the equivalent via a configurable **rotation policy** on a key.
+
+Rotation changes the cryptographic key material while preserving the logical KMS key identity. Key replacement creates a new KMS key and requires a migration strategy for existing encrypted data and services.
 
 ### Key Aliases
 
@@ -1305,11 +1646,36 @@ KMS enforces a mandatory waiting period (7–30 days) before actually deleting a
 
 **Project usage:** `rds.tf`'s `aws_kms_key.rds` uses the default `deletion_window_in_days = 7` — the minimum allowed, appropriate for a learning/demo environment where the key protects disposable RDS storage rather than long-lived production data.
 
+### KMS Security and Troubleshooting
+
+Common errors:
+
+- `AccessDeniedException`: missing IAM or key-policy permission.
+- `DisabledException`: key is disabled.
+- `KMSInvalidStateException`: key is in an incompatible lifecycle state.
+- `NotFoundException`: incorrect key ID, ARN or region.
+
+Useful commands:
+
+```bash
+aws kms describe-key --key-id alias/app-key
+
+aws kms get-key-policy \
+  --key-id alias/app-key \
+  --policy-name default
+
+aws kms list-grants --key-id alias/app-key
+
+aws kms enable-key-rotation --key-id <key-id>
+```
+
+Never delete a KMS key until all dependent data has been migrated or is no longer required. Permanent key deletion can make encrypted data unrecoverable.
+
 ### Secrets Manager vs Parameter Store vs Azure Key Vault Secrets
 
 | Feature | Secrets Manager | Parameter Store (SecureString) | Azure Key Vault Secrets |
-|---|---|---|---|
-| Cost | ~$0.40/secret/month + API calls | Free (standard tier) | Per-operation, low cost |
+| --- | --- | --- | --- |
+| Cost | ≈ $0.40/secret/month + API calls | Free (standard tier) | Per-operation, low cost |
 | Automatic rotation | Built-in (Lambda-based) | Not built-in | Built-in (Function-based) |
 | Cross-account/tenant sharing | Native resource policies | Limited | Access policies / RBAC |
 | Versioning | Full staging (AWSCURRENT/AWSPENDING) | Basic version history | Full versioning |
@@ -1317,38 +1683,254 @@ KMS enforces a mandatory waiting period (7–30 days) before actually deleting a
 
 Secrets Manager (or Key Vault) is generally preferred for anything requiring **automatic rotation**, like a database password; Parameter Store is a cost-effective choice for static configuration that still needs encryption but not scheduled rotation.
 
+### Secrets Manager / Key Vault vs Plaintext Terraform Variables
+
+Terraform variables (even `sensitive = true`) are still written in **plaintext into the state file** — sensitivity only suppresses console/log output, not storage. **Secrets Manager** stores credentials encrypted with KMS, supports automatic rotation, and gives applications a single `GetSecretValue` API call. Azure's equivalent, **Key Vault**, works the same way with `GetSecret` and Managed Identity-based access.
+
+**Project usage:** this project does not currently use Secrets Manager or Key Vault for the database password — `db_password`/`DB_PASSWORD` flows from `.env` through `TF_VAR_db_password`/Pulumi's `get_secret()` directly into Terraform/Pulumi state, and separately into the cluster as a Kubernetes Secret (plaintext-in-state, `sensitive = true` in `variables.tf`, `Output.secret()` in Pulumi). Adopting Secrets Manager/Key Vault plus the CSI Secrets Store driver would close this gap.
+
 ### Retrieving Secrets at Runtime
 
 At runtime, an application (or an init container / CSI Secrets Store driver) calls `GetSecretValue` (Secrets Manager) or `GetSecret` (Key Vault) using IAM/Managed-Identity credentials scoped via IRSA/Workload Identity, parses the returned value, and establishes the connection — rather than the credential ever being embedded in an image, ConfigMap, or plain Kubernetes Secret.
 
-**Project usage:** as noted above, this project's own runtime secrets (`devops-app-secrets`, `postgres-secrets`) currently flow as plain (or Sealed) Kubernetes Secrets rather than through Secrets Manager/Key Vault at runtime — see the Secrets Manager topic under RDS for the gap this leaves.
+**Project usage:** this project's own runtime secrets (`devops-app-secrets`, `postgres-secrets`) currently flow as plain (or Sealed) Kubernetes Secrets rather than through Secrets Manager/Key Vault at runtime — see the Secrets Manager topic above for the gap this leaves.
+
+### Sealed Secrets
+
+`install_sealed_secrets.sh` installs the Bitnami Sealed Secrets controller plus the matching `kubeseal` CLI; `seal_secrets.sh` then encrypts `devops-app-secrets` against the cluster's public key and writes a `SealedSecret` manifest safe to commit to Git (`overlays/prod/devops-app-sealed-secret.yaml`, `overlays/prod-azure/devops-app-sealed-secret.yaml`). This matters for DR specifically because it means the *encrypted* secret material survives in Git even if the cluster (and its unencrypted Secrets) is lost — recreating the cluster and re-applying the same SealedSecret manifest recovers the application's credentials without anyone re-typing them, as long as the Sealed Secrets controller's private key itself was backed up separately (a step this project's scripts don't automate, and worth calling out as a real gap: losing that private key without a backup means every existing SealedSecret becomes permanently undecryptable). `base/kustomization.yaml`'s own comment block documents this trade-off explicitly: the placeholder `secrets.yaml` in `base/` is fine for direct/script mode (where `deploy_kubernetes.sh` overwrites the placeholders before apply) but must be swapped for a real secret manager before using ArgoCD/GitOps in production, since nothing in GitOps mode would otherwise overwrite those placeholder values.
+
+### HashiCorp Vault
+
+#### Vault Server
+
+Vault Server is the main service of HashiCorp Vault. It securely stores, manages, and controls access to sensitive information such as passwords, API keys, database credentials, and encryption keys. Think of it as a secure locker for your application's secrets.
+
+**Purpose.** Imagine your application connects to a database. You need a database username and password. Without Vault, these credentials are stored directly in your code, which is risky:
+
+```text
+DB_USERNAME = "admin"
+DB_PASSWORD = "mypassword123"
+```
+
+With Vault, your application retrieves the credentials securely from Vault Server when needed:
+
+1. Application (requests database credentials)
+2. Vault Server (authenticates requests and controls secret access)
+3. Secrets / Database (credentials are securely managed by Vault)
+
+When started in dev mode, the server prints:
+
+```text
+API Address: http://127.0.0.1:8200
+Root Token: hvs.xxxxxxxxxxxxx
+```
+
+- **API Address:** the URL applications and the Vault CLI use to communicate with Vault.
+- **Root Token:** a highly privileged token used to authenticate with Vault.
+- **Port 8200:** Vault's default API port.
+- **Dev mode:** starts Vault with automatic initialization and unsealing, using temporary, in-memory storage.
+
+The server continues running in that terminal until you stop it, typically with `Ctrl+C`.
+
+#### Vault Server vs Vault CLI vs Vault API
+
+| Component | Purpose |
+| --- | --- |
+| Vault Server | Stores and manages secrets and enforces access policies. |
+| Vault CLI | Lets you interact with Vault using terminal commands. |
+| Vault API | Allows applications and tools to communicate with Vault. |
+
+```bash
+vault server -dev # Starts the server.
+vault status      # Checks the server's status.
+vault kv put secret/app password=hello123   # Stores a secret through the CLI.
+vault kv get secret/app   # Retrieves that secret.
+```
+
+#### Vault in Production
+
+The section above is dev mode only. Dev mode is **in-memory, auto-unsealed, with a known root token. Never use it outside a laptop.**
+
+- **Seal/unseal**: Vault starts **sealed** (data is encrypted; the master key is split with Shamir). `vault operator init -key-shares=5 -key-threshold=3` then 3 people `vault operator unseal`. In production use **auto-unseal** with AWS KMS / Azure Key Vault so restarts don't need humans.
+- **Storage**: integrated **Raft** (HA cluster, 3 or 5 nodes) is the modern default. Run behind TLS. Revoke the initial root token after setup (`vault token revoke`).
+- **Auth methods** prove *who you are*: Kubernetes, AWS/Azure IAM, OIDC, AppRole (for CI). **Policies** say *what you may do*. **Tokens/leases** expire and can be revoked.
+- **Secrets engines**: `kv-v2` (static secrets), `database` (**dynamic**, short-lived DB credentials created per request), `pki` (issues certs), `transit` (encryption-as-a-service).
+
+```bash
+vault secrets enable -path=secret kv-v2
+vault kv put secret/myapp db_password='...'
+vault policy write myapp - <<'EOF'
+path "secret/data/myapp/*" { capabilities = ["read"] }   # NOTE: kv-v2 policies need the /data/ segment
+EOF
+vault auth enable kubernetes
+vault write auth/kubernetes/role/myapp bound_service_account_names=myapp \
+  bound_service_account_namespaces=devops-app policies=myapp ttl=1h
+vault read database/creds/readonly      # dynamic engine: returns a username/password that expires
+vault audit enable file file_path=/var/log/vault_audit.log
+```
+
+Pods fetch secrets via **Vault Agent injector**, the **CSI provider**, or **External Secrets Operator**.
+
+#### Kubernetes Secret Management Options Compared
+
+| Tool | Secret lives in | Git-friendly | Rotation | Complexity |
+| --- | --- | --- | --- | --- |
+| **Sealed Secrets** (this project) | Encrypted manifest in Git; decrypted in-cluster | Yes | Manual | Low (back up the controller key!) |
+| **SOPS** (+ age/KMS) | Encrypted values inside YAML/JSON in Git | Yes | Manual | Low |
+| **External Secrets Operator** | Cloud secret manager / Vault; synced into K8s Secrets | Yes (references only) | Automatic | Medium |
+| **Vault** | Vault | Yes (references only) | Dynamic/automatic | High (you operate it) |
+| **Secrets Manager / Key Vault + CSI** | Cloud secret manager | Yes (references only) | Built-in | Medium |
+
+### Digital Certificates, TLS/SSL, ACM and Azure Key Vault Certificates
+
+A **certificate** cryptographically proves a server is who it claims to be, issued by a trusted **Certificate Authority (CA)**. HTTPS uses one to both verify identity and set up encryption.
+
+**AWS:** ACM (AWS Certificate Manager) issues, stores, and auto-renews free public TLS certificates for use with an ALB or CloudFront — the private key is never exposed. Certificates for CloudFront must be requested in `us-east-1` specifically, regardless of where other resources live.
+
+**Azure:** the equivalent is App Service Managed Certificates or a certificate stored in **Azure Key Vault**, attached to Application Gateway/Front Door; Let's Encrypt via cert-manager is also common on AKS, mirroring how this project would add TLS to the nginx ingress.
+
+#### ACM — Advanced
+
+ACM manages TLS certificates for supported AWS services.
+
+- **Certificate validation:** ACM supports DNS validation and email validation. DNS validation is generally preferred because it can support automatic renewal when the required validation records remain in place.
+- **Public vs private certificates:** public certificates establish trusted identity for internet-facing services; private certificates are issued through ACM Private CA for internal systems and private PKI requirements.
+- **ACM and load balancers:** ACM certificates can be attached to supported services such as Application Load Balancers and CloudFront distributions. The TLS connection is established using the certificate before application traffic is forwarded to the backend.
+- **Regional considerations:** ACM certificates are regional resources for regional services. CloudFront requires the ACM certificate in `us-east-1`, regardless of the origin's AWS region.
+- **Certificate renewal:** ACM automatically attempts renewal for eligible certificates. DNS validation records must remain available. Monitor certificate status and expiration, and investigate renewal failures before expiry.
+
+```bash
+aws acm list-certificates --region ap-south-1
+
+aws acm describe-certificate \
+  --certificate-arn <certificate-arn> \
+  --region ap-south-1
+```
+
+Common issues:
+
+- Missing DNS validation records.
+- Certificate requested in the wrong region.
+- Domain mismatch.
+- Incorrect certificate attached to the listener.
+- Expired or failed certificate renewal.
+
+**Best practice:** use ACM with HTTPS listeners and redirect HTTP traffic to HTTPS. Never disable certificate validation in application clients as a workaround.
 
 ---
 
-## Systems Management & Session Access
+## Systems Management and Session Access — AWS Systems Manager
 
-### AWS Systems Manager (SSM) Beyond Session Manager
-
-SSM is a suite of tools for operating infrastructure at scale: **Session Manager** (shell access without SSH/bastion), **Parameter Store** (config/secrets storage, above), **Run Command** (execute commands across many instances without SSH), **Patch Manager** (automates OS patching schedules), and **Automation** (runbooks for predefined remediation).
+SSM is a suite of tools for operating infrastructure at scale. It is a centralized service for operating, automating and maintaining AWS infrastructure.
 
 ### SSM Session Manager vs Azure Bastion / `az ssh` / Azure Automation
 
 SSM Session Manager provides secure shell access **without opening inbound port 22**, without a bastion host, and without managing SSH key pairs — access is governed entirely through IAM policy, and every session is logged/auditable. It requires only the `AmazonSSMManagedInstanceCore` policy on the instance role and the SSM Agent running, eliminating an entire class of open-port/key-management risk. Azure's nearest equivalents are **Azure Bastion** (a managed jump-host service with no public IP needed on the target) and `az ssh`/`az aks command invoke`, plus **Azure Automation** runbooks as the analog to SSM Automation.
 
-**Project usage:** this project's design already assumes SSM/Bastion-style access rather than a bastion host wherever it touches an actual VM — although since the app itself runs entirely on managed Kubernetes nodes rather than raw EC2/Azure VMs, neither SSM Session Manager nor Azure Bastion is directly wired into any script here; `kube_context.sh`/`kubectl exec` plays the equivalent "get a shell without opening a port" role for the application pods themselves.
+Benefits: no bastion host, no SSH key distribution, IAM-controlled access, session logging and auditing, and support for private instances through configured connectivity.
 
+**Project usage:** this project's design already assumes SSM/Bastion-style access rather than a bastion host wherever it touches an actual VM — although since the app itself runs entirely on managed Kubernetes nodes rather than raw EC2/Azure VMs, neither SSM Session Manager nor Azure Bastion is directly wired into any script here; `kube_context.sh`/`kubectl exec` plays the equivalent "get a shell without opening a port" role for the application pods themselves. The project could extend this approach with Patch Manager, Run Command and Automation for managing supporting EC2 infrastructure.
+
+### Run Command
+
+Run Command executes administrative commands across multiple managed instances without SSH — install packages, restart services, collect logs, execute scripts, inspect system configuration.
+
+```bash
+aws ssm send-command \
+  --instance-ids i-0123456789abcdef0 \
+  --document-name "AWS-RunShellScript" \
+  --parameters commands="uptime"
+```
+
+### Patch Manager
+
+Patch Manager automates operating-system patching. It supports patch baselines, maintenance windows and compliance reporting for supported managed nodes.
+
+### Automation
+
+SSM Automation executes predefined runbooks for operational tasks — restart an EC2 instance, create snapshots, remediate security configuration, perform multi-step operational recovery.
+
+### Parameter Store
+
+Parameter Store stores application configuration and SecureString parameters (config/secrets storage; see the comparison with Secrets Manager above). It supports hierarchical paths and IAM-based access control.
+
+```bash
+aws ssm put-parameter \
+  --name "/prod/app/db-host" \
+  --value "db.example.internal" \
+  --type String
+
+aws ssm get-parameter \
+  --name "/prod/app/db-password" \
+  --with-decryption
+```
+
+### Maintenance Windows
+
+Maintenance Windows schedule operational activities such as patching, updates and administrative commands. They help coordinate maintenance without requiring manual execution.
+
+### State Manager
+
+State Manager helps maintain a desired configuration across managed instances. It can periodically apply associations to keep software, configuration or other settings consistent.
+
+### Inventory
+
+Inventory collects information about managed instances, including installed software, OS details and configuration data. It is useful for compliance and asset management.
+
+### Systems Manager Security Requirements
+
+- Attach an appropriate instance IAM role.
+- Ensure SSM Agent is installed and running.
+- Provide network connectivity to required SSM endpoints.
+- Use least-privilege IAM permissions.
+- Configure session logging.
+- Protect Parameter Store SecureString values with KMS.
+- Monitor command execution and compliance.
 
 ---
 
-## Monitoring, Logging & Auditing — CloudWatch, CloudTrail, Config, and Azure Monitor
+## Monitoring, Logging and Auditing — CloudWatch, CloudTrail, Config and Azure Monitor
 
 ### CloudWatch Metric, Alarm and Log Group vs Azure Monitor Metric, Alert Rule and Log Analytics Workspace
 
-A **Metric** is a time-ordered set of data points (e.g. `CPUUtilization`, `FreeStorageSpace`) automatically published by a service. An **Alarm** watches a metric against a threshold over an evaluation period and changes state (OK/ALARM/INSUFFICIENT_DATA), optionally triggering an SNS notification or scaling action. A **Log Group** is a container for log streams — a fundamentally different, unstructured data type from numeric metrics. Azure Monitor's equivalents are **Metrics**, **Alert Rules** (triggering an **Action Group**), and a **Log Analytics Workspace** for log data.
+A **Metric** is a time-ordered set of data points (e.g. `CPUUtilization`, `FreeStorageSpace`) automatically published by a service. An **Alarm** watches a metric against a threshold over an evaluation period and changes state (OK/ALARM/INSUFFICIENT\_DATA), optionally triggering an SNS notification or scaling action. A **Log Group** is a container for log streams — a fundamentally different, unstructured data type from numeric metrics. Azure Monitor's equivalents are **Metrics**, **Alert Rules** (triggering an **Action Group**), and a **Log Analytics Workspace** for log data.
 
-**Project usage:** `alerts.tf` defines `aws_cloudwatch_metric_alarm.rds_cpu_high` and `rds_storage_low`, both wired to an `aws_sns_topic.alerts` with an optional email subscription (`alert_email`). On Azure, `monitoring_alerts.py` builds the direct equivalent: an `insights.MetricAlert` on `connections_failed` against the PostgreSQL Flexible Server, wired to an `insights.ActionGroup` — except the Azure Action Group's receiver is a **webhook** pointed at the self-healing Function App rather than an email/SNS subscription, so an alert there triggers automated remediation, not just a notification (see Self-Healing below).
+**Project usage:** `alerts.tf` defines `aws_cloudwatch_metric_alarm.rds_cpu_high` and `rds_storage_low`, both wired to an `aws_sns_topic.alerts` with an optional email subscription (`alert_email`). On Azure, `monitoring_alerts.py` builds the direct equivalent: an `insights.MetricAlert` on `connections_failed` against the PostgreSQL Flexible Server, wired to an `insights.ActionGroup` — except the Azure Action Group's receiver is a **webhook** pointed at the self-healing Function App rather than an email/SNS subscription, so an alert there triggers automated remediation, not just a notification (see Self-Healing under Disaster Recovery).
 
-### `treat_missing_data` Semantics
+### Amazon CloudWatch — Advanced Monitoring
+
+CloudWatch collects metrics, logs and events from AWS resources and applications. It provides monitoring, alerting, dashboards and operational visibility.
+
+#### CloudWatch Metrics
+
+Metrics are numerical measurements collected over time. Examples: EC2 CPUUtilization, EBS VolumeReadOps, RDS FreeStorageSpace, Lambda Errors, Lambda Duration, SQS ApproximateNumberOfMessagesVisible.
+
+Important metric concepts:
+
+- Namespace: groups related metrics.
+- Metric Name: identifies the measurement.
+- Dimensions: identify the resource or measurement context.
+- Timestamp: indicates when the value was recorded.
+- Statistic: Average, Sum, Minimum, Maximum or SampleCount.
+- Period: time interval used for aggregation.
+
+#### Custom Metrics
+
+Applications can publish their own metrics using the CloudWatch API. Custom metrics help monitor business-level behavior that standard AWS metrics do not capture.
+
+```bash
+aws cloudwatch put-metric-data \
+  --namespace "MyApplication" \
+  --metric-name "ActiveUsers" \
+  --value 120 \
+  --unit Count
+```
+
+#### CloudWatch Alarms
+
+An alarm monitors a metric against a configured threshold. Alarm states: OK, ALARM, INSUFFICIENT\_DATA. Alarms can trigger SNS notifications, Auto Scaling actions or other supported integrations.
+
+#### `treat_missing_data` Semantics
 
 If a metric stops reporting data (a maintenance window, a monitoring hiccup), some alarm configurations either hold their prior state or move to `INSUFFICIENT_DATA`, which can itself be treated as a breach depending on configuration. Setting `notBreaching` tells the alarm "assume things are fine" if there's no data — avoiding false-positive pages during expected gaps, at the risk of masking a real problem if data loss coincides with an actual failure.
 
@@ -1369,6 +1951,54 @@ resource "aws_cloudwatch_metric_alarm" "backup_missing" {
 
 This alarm deliberately inverts the usual default: for a metric a healthy pipeline should be emitting every hour, *silence itself* is the failure signal, so `treat_missing_data = "breaching"` is correct here even though `notBreaching` is the more common choice elsewhere.
 
+#### Metric Math
+
+Metric Math allows multiple metrics to be combined into calculated expressions — error percentage, request success ratio, average latency, resource utilization percentage. This avoids creating separate custom metrics for every derived value.
+
+#### CloudWatch Logs
+
+CloudWatch Logs stores application and service logs. Its main components: Log Group, Log Stream, Log Events, Retention Policy, Metric Filters, Subscription Filters. A metric filter can transform matching log patterns into CloudWatch metrics. Subscription filters can forward logs to destinations such as Lambda, Kinesis Data Streams and supported delivery integrations.
+
+#### CloudWatch Logs Insights
+
+Logs Insights provides a query language for analyzing large log datasets. It is useful for investigating application errors without manually downloading logs.
+
+```sql
+fields @timestamp, @message
+| filter @message like /ERROR/
+| sort @timestamp desc
+| limit 50
+```
+
+#### Dashboards
+
+CloudWatch dashboards combine metrics and visualizations into one monitoring interface. A production dashboard might contain: EC2 CPU and memory, ALB request count and latency, Lambda errors and duration, SQS queue depth, RDS connections and free storage, and application-specific error metrics.
+
+#### Composite Alarms
+
+Composite alarms combine the states of multiple alarms using logical expressions. Example: trigger a critical notification only when CPU is high AND application errors are also high. This reduces unnecessary notifications.
+
+#### CloudWatch Synthetics
+
+Synthetics uses canaries to periodically execute scripted checks against applications and APIs. It can detect failures even when normal user traffic is low.
+
+#### CloudWatch Application Signals and X-Ray
+
+Application Signals provides application performance monitoring and service-level visibility for supported workloads. AWS X-Ray provides distributed tracing, helping identify latency and failures across service boundaries.
+
+#### CloudWatch Best Practices
+
+- Monitor application and infrastructure metrics together.
+- Configure meaningful log retention.
+- Create actionable alarms.
+- Use Logs Insights for investigations.
+- Use custom metrics for business-critical signals.
+- Avoid high-cardinality metric dimensions that create unnecessary costs.
+- Create dashboards for operational teams.
+- Monitor alarm delivery and missing data.
+
+**Project usage:** the project already uses CloudWatch alarms to monitor RDS CPU, storage and backup verification. Advanced dashboards, Logs Insights queries and composite alarms would improve operational visibility.
+
 ### Enhanced Monitoring vs Azure's Server-Level Metrics
 
 `monitoring_interval = 0` (the default) disables **Enhanced Monitoring**, which otherwise gathers OS-level metrics (per-process CPU, memory) at intervals as low as 1 second via a dedicated agent, at extra cost and requiring an extra IAM role. Standard CloudWatch metrics (60-second granularity, engine-level only) are sufficient for most cases and are free. Azure Database for PostgreSQL exposes comparable server-level metrics (CPU, memory, IOPS, storage) through Azure Monitor at no extra cost, without a separate "enhanced" tier to opt into.
@@ -1383,18 +2013,66 @@ CloudWatch/Azure Monitor tell you *that* something is wrong. **X-Ray** (AWS) / *
 
 **CloudTrail** records every API call in an AWS account — who made it, when, from what IP, request/response contents — as an immutable audit log. A basic 90-day event history is enabled automatically at no cost; creating a **Trail** extends this to unlimited retention in S3, optionally streamed to CloudWatch Logs for real-time alerting. Azure's **Activity Log** plays the same role for control-plane operations, retained 90 days by default and exportable to a Log Analytics Workspace or Storage Account for longer retention.
 
-### Management Events vs Data Events
+#### Management Events vs Data Events
 
-**Management events** record control-plane operations (creating a VPC, changing an IAM policy, launching an instance) and are logged by default. **Data events** record high-volume data-plane operations (an S3 `GetObject`, a Lambda invocation) and must be explicitly enabled per-resource due to volume/cost. Azure's Activity Log records the management-event equivalent by default; data-plane operations (a blob read) require **Storage Analytics logging** or diagnostic settings, enabled per-resource the same way.
+**Management events** record control-plane operations (creating a VPC, changing an IAM policy, launching an instance) and are logged by default. **Data events** record high-volume data-plane operations (an S3 `GetObject`, a Lambda invocation) and must be explicitly enabled per-resource due to volume/cost. **Network activity events** record supported network-related API activity, such as VPC endpoint policy-related events. Azure's Activity Log records the management-event equivalent by default; data-plane operations (a blob read) require **Storage Analytics logging** or diagnostic settings, enabled per-resource the same way.
+
+#### Event History vs Trail vs CloudTrail Lake
+
+| Feature | Event History | Trail | CloudTrail Lake |
+| --- | --- | --- | --- |
+| Basic API history | Yes | Yes | Yes, for ingested events |
+| Long-term S3 storage | No | Yes | Managed event data store |
+| SQL-style querying | No | Limited via Athena after delivery | Yes |
+| Organization-wide collection | Not a substitute for an org trail | Yes | Supported |
+| Primary purpose | Quick investigation | Audit retention | Advanced investigation |
+
+#### Organization Trails
+
+An organization trail collects events across an AWS Organization's member accounts. Events can be centralized in a dedicated log archive account. This improves security investigations and reduces the risk of individual accounts controlling or deleting their own audit evidence.
+
+#### Log File Integrity Validation
+
+CloudTrail can validate log-file integrity using digest files and cryptographic hashes. This helps detect whether delivered log files have been modified or deleted.
+
+#### CloudTrail Insights
+
+CloudTrail Insights detects unusual patterns in supported API activity, such as unusual API call rates or error rates. It helps identify suspicious changes in operational behavior.
+
+#### Protecting CloudTrail Logs
+
+- Use a dedicated log archive account.
+- Enable S3 versioning.
+- Restrict bucket access.
+- Enable log-file validation.
+- Encrypt logs with KMS where required.
+- Configure retention and lifecycle policies.
+- Prevent unauthorized deletion through organization-level guardrails.
+- Monitor changes to trail configuration.
+
+#### CloudTrail Investigation Commands
+
+```bash
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventName,AttributeValue=CreateUser
+
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventSource,AttributeValue=iam.amazonaws.com
+```
+
+For an investigation, examine: user identity, access key ID, source IP address, event name, event time, resource identifiers, and error code and error message.
 
 ### AWS Config vs Azure Policy
 
 AWS Config continuously records resource configuration state and evaluates it against **Config Rules** (managed or custom, e.g. "flag any S3 bucket that becomes publicly readable"). Non-compliant resources can trigger an SNS alert or an automated remediation action via SSM Automation, without a human manually checking every resource. **Azure Policy** plays the identical role — built-in or custom policy definitions assigned at a scope, with **DeployIfNotExists** and **Modify** effects providing the automated-remediation equivalent of a Config remediation action.
 
-### CloudTrail vs Config — the Distinction
+### CloudTrail vs CloudWatch vs AWS Config
 
-**CloudTrail** answers "what action was taken" (an audit log of events). **AWS Config** answers "what did the resource look like, and does it comply with policy" (configuration state and its history over time, plus compliance evaluation). Azure's Activity Log and Azure Policy split the same distinction.
+- **CloudTrail:** who performed an action? An audit log of events.
+- **CloudWatch:** what is happening to the system?
+- **AWS Config:** what is the current or historical resource configuration, and does it comply with policy? Configuration state and its history over time, plus compliance evaluation.
 
+These services complement each other and should be used together for production auditing. Azure's Activity Log and Azure Policy split the same distinction.
 
 ---
 
@@ -1449,7 +2127,7 @@ Both sides block all public access by default and enforce TLS — the AWS bucket
 
 ### Lifecycle Policies
 
-A Lifecycle Policy automatically transitions objects between storage classes/tiers or deletes them based on age, without manual intervention — e.g., "move to IA after 30 days, delete after 365." This is how the storage-class table above gets applied in practice.
+A Lifecycle Policy automatically transitions objects between storage classes/tiers or deletes them based on age, without manual intervention — e.g., "move to IA after 30 days, delete after 365." This is how the storage-class list above gets applied in practice.
 
 **Project usage:**
 
@@ -1494,16 +2172,20 @@ S3 can serve static files directly as a website (no server needed) via **Static 
 - **Encryption at rest options**: **SSE-S3** (default on all new objects since 2023), **SSE-KMS** (audit trail + key policy control; enable **S3 Bucket Keys** to cut KMS request costs), **SSE-C** (you supply the key per request), **DSSE-KMS** (two layers). Azure: Microsoft-managed keys by default, optional customer-managed keys in Key Vault, plus infrastructure (double) encryption.
 - **Ransomware / accidental delete protection**: **Versioning** + lifecycle for old versions, **Object Lock** (WORM; *Governance* mode can be overridden by privileged users, *Compliance* mode cannot be shortened by anyone, even root), **MFA Delete**, cross-account/cross-region copies. Azure equivalents: blob versioning, soft delete, **immutable storage** policies.
 - **Block Public Access** at the **account** level (not just per bucket) and **ACLs disabled** (`BucketOwnerEnforced`, default on new buckets). Enforce TLS:
+
 ```json
 { "Effect": "Deny", "Principal": "*", "Action": "s3:*",
   "Resource": ["arn:aws:s3:::BUCKET", "arn:aws:s3:::BUCKET/*"],
   "Condition": { "Bool": { "aws:SecureTransport": "false" } } }
 ```
-- **Multipart uploads**: use for objects > ~100 MB (parallel, resumable, required above 5 GB). **Abandoned parts are billed silently**; add a lifecycle rule:
+
+- **Multipart uploads**: use for objects > about 100 MB (parallel, resumable, required above 5 GB). **Abandoned parts are billed silently**; add a lifecycle rule:
+
 ```hcl
 rule { id = "abort-incomplete-mpu"; status = "Enabled"; filter {}
        abort_incomplete_multipart_upload { days_after_initiation = 7 } }
 ```
+
 - **Request-rate scaling**: roughly 3,500 write and 5,500 read requests per second **per prefix**; spread hot keys across prefixes.
 - **Backup rule of thumb (3-2-1)**: 3 copies, 2 media/storage types, 1 offsite/other region (plus ideally 1 immutable and 1 in another account). **A backup that has never been restored is a hypothesis.**
 - **EBS**: turn on **encryption by default** per region; snapshots are incremental and can be shared (an unencrypted snapshot shared publicly is a classic breach).
@@ -1511,6 +2193,30 @@ rule { id = "abort-incomplete-mpu"; status = "Enabled"; filter {}
 ### EBS vs Instance Store / Azure Managed Disks vs Temp Disk
 
 EBS volumes are **network-attached, persistent block storage** that survive instance stop/termination (unless configured otherwise) and can be detached/reattached. **Instance Store** is physically attached to the host, offering higher IOPS/lower latency, but is **ephemeral** — lost on stop, terminate, or hardware failure. Azure's equivalents are **Managed Disks** (persistent, network-attached) and the VM's local **Temp Disk** (ephemeral, host-attached).
+
+#### EBS Volume Types
+
+| Type | Best for | Notes |
+| --- | --- | --- |
+| **gp3** | Default choice for most workloads | Baseline 3,000 IOPS / 125 MB/s, add more independently of size |
+| **gp2** | Legacy default | IOPS scales with volume size (3 IOPS/GB) |
+| **io1 / io2** | Databases needing consistent high IOPS | Most expensive, most predictable |
+| **st1** | Big sequential workloads | Cannot be a boot volume |
+| **sc1** | Rarely accessed data, lowest cost | Cannot be a boot volume |
+
+**Project usage:** `overlays/prod/storageclass.yaml` sets `gp3` as the cluster's default `StorageClass` (`ebs.csi.aws.com` provisioner, `volumeBindingMode: WaitForFirstConsumer`) — the PVCs in `app-data-pvc.yaml` and the Postgres StatefulSet's `volumeClaimTemplates` both bind against it on AWS. Azure's nearest equivalent tier is **Premium SSD v2** managed disks via the `disk.csi.azure.com` provisioner.
+
+#### IOPS
+
+IOPS (Input/Output Operations Per Second) measures how many individual read/write operations storage can handle per second — different from raw throughput (MB/s). Many small, random operations (a busy database) are limited by IOPS; large sequential transfers (log processing) care more about throughput.
+
+#### Snapshots
+
+A snapshot is a point-in-time copy of a storage volume or database, stored behind the scenes. The first snapshot copies everything; every one after is incremental — cheap and fast even for large volumes. This is how EBS backups, RDS backups, and Azure managed-disk/PostgreSQL backups all work under the hood.
+
+#### EBS Snapshot vs AMI
+
+An **EBS Snapshot** backs up a single volume's data. An **AMI** is a bootable template — a snapshot of the root volume plus launch metadata needed to start a new instance. Every AMI relies on an underlying snapshot; not every snapshot is bootable as an AMI.
 
 ### EFS
 
@@ -1522,8 +2228,8 @@ Amazon FSx is a fully managed, high-performance file-system family: **FSx for Wi
 
 ### S3 vs EBS vs EFS vs FSx vs Azure Equivalents
 
-| | Type | Attach point | Best for | Azure equivalent |
-|---|---|---|---|---|
+|  | Type | Attach point | Best for | Azure equivalent |
+| --- | --- | --- | --- | --- |
 | S3 | Object storage | API/HTTP | Files, backups, static assets, unlimited scale | Blob Storage |
 | EBS | Block storage | One instance at a time | A server's own disk (OS, databases) | Managed Disks |
 | EFS | Network file system | Many instances/pods simultaneously | Shared Linux file access across a fleet | Azure Files |
@@ -1531,10 +2237,11 @@ Amazon FSx is a fully managed, high-performance file-system family: **FSx for Wi
 
 **Project usage:** `app-data-pvc.yaml` provisions a 2Gi `ReadWriteOnce` PVC (block storage — EBS on EKS via `overlays/prod/storageclass.yaml`'s `gp3` class, or Azure managed disks via the default AKS storage class on `prod-azure`) for the app's own SQLite file (`DB_SQLITE_PATH` in `configmap.yaml`) and mounted at `/data`; this is EBS/managed-disk-shaped block storage, not EFS/Azure Files, because the app has exactly one pod's worth of local state to persist, not a filesystem multiple pods need to share concurrently. The Postgres StatefulSet's `volumeClaimTemplates` are the same block-storage pattern, one volume per replica.
 
-
 ---
 
 ## Caching — ElastiCache and Azure Cache for Redis
+
+Caching stores a copy of data somewhere faster/closer to where it's needed, so repeat requests skip expensive work. The trade-off is **staleness** until the copy refreshes or expires. This underlies CloudFront/Azure Front Door and, inside the app itself, an in-memory LRU cache.
 
 Amazon ElastiCache is a fully managed **in-memory caching** service supporting Redis and Memcached, sitting between an application and a slower backing store (RDS/DynamoDB) to serve frequent reads from memory instead of disk. **Azure Cache for Redis** is the direct Azure equivalent, offering the same managed-Redis shape.
 
@@ -1551,25 +2258,25 @@ Databases are relatively expensive and slow to scale for read-heavy workloads �
 
 When underlying data changes, the cached copy becomes stale until refreshed or removed. Deciding *when* to expire or update cached entries without serving stale data or refreshing too often is a classic hard problem, commonly handled with a time-based expiry (TTL) baseline plus explicit invalidation on writes for data that must always be fresh.
 
-**Project usage:** this project doesn't run a managed ElastiCache/Azure Cache for Redis cluster — instead the application maintains its own small in-process cache, sized via `LRU_CACHE_SIZE: "128"` in `configmap.yaml`. This trades away cross-pod cache sharing (each replica has its own independent cache) for zero extra infrastructure — a reasonable choice at this project's scale, but a managed Redis layer would become worth adding once the app runs enough replicas that cache-hit-rate consistency across pods starts to matter.
+**Project usage:** `configmap.yaml` sets `LRU_CACHE_SIZE: "128"` for the application's own in-process cache — independent of any CDN, since this project has no CloudFront/Front Door layer in front of it, and without a managed ElastiCache/Azure Cache for Redis cluster. This trades away cross-pod cache sharing (each replica has its own independent cache) for zero extra infrastructure — a reasonable choice at this project's scale, but a managed Redis layer would become worth adding once the app runs enough replicas that cache-hit-rate consistency across pods starts to matter.
 
 ---
 
-## Load Balancing & Ingress
+## Load Balancing and Ingress
 
 ### ELB, ALB, NLB, CLB and Azure's Load Balancing Family
 
 ELB is AWS's umbrella load-balancing service name, offering three types: **ALB** (Layer 7, HTTP/HTTPS), **NLB** (Layer 4, TCP/UDP), and the legacy **Classic Load Balancer (CLB)**, no longer recommended for new applications. Azure's equivalents are **Application Gateway** (Layer 7, with WAF integration) and **Azure Load Balancer** (Layer 4).
 
+### Load Balancers and Health Checks
+
+A load balancer sits in front of multiple servers, distributing traffic so no single one is overwhelmed, and routing around any that fail. A **health check** is a small, repeated request (e.g., "GET `/api/v1/health` every 5 seconds") a load balancer or orchestrator sends to confirm a server is still working; enough consecutive failures removes it from rotation until it recovers.
+
+**Project usage:** `deployment.yaml`'s `startupProbe`/`livenessProbe`/`readinessProbe` are exactly this mechanism at the Kubernetes level, checked before any cloud load balancer is involved.
+
 ### Listener and Target Group
 
 A **Listener** checks for connections on a specific port/protocol and defines rules for what to do with them. A **Target Group** is the set of actual destinations (instances, IPs, or Lambda functions) the load balancer forwards matched traffic to, along with the health check config. Azure's equivalents are a **Listener/Rule** and a **Backend Pool**.
-
-### Sticky Sessions
-
-By default, a load balancer spreads requests across targets independently, which breaks anything relying on server-local session state. **Sticky sessions** use a cookie to pin a client to the same target for the session's duration. It's a workaround, not a best practice — the real fix is a stateless application (session data in a shared cache/database instead of server memory), so any target can serve any request. Azure Application Gateway and Azure Load Balancer both support the equivalent cookie- or source-IP-based affinity.
-
-**Project usage:** `base/service.yaml` sets `sessionAffinity: ClientIP` with a 3-hour (`10800`s) timeout at the Kubernetes Service level — the same trade-off one layer down: it pins a client to the same pod by source IP rather than a cookie, useful given the app's SQLite file is pod-local rather than shared, so a client bouncing between replicas mid-session could otherwise see inconsistent state. This is the Kubernetes-native equivalent of ALB/Application Gateway sticky sessions, applied without needing either cloud's load balancer at all.
 
 ### ALB vs NLB / Application Gateway vs Azure Load Balancer
 
@@ -1579,369 +2286,76 @@ By default, a load balancer spreads requests across targets independently, which
 
 Without it, each load balancer node only distributes traffic to targets in its **own** AZ, causing uneven load if AZs have unequal target counts. With it, every node distributes evenly across **all** registered targets in **all** AZs. ALB has this on by default at no extra cost; NLB has it off by default, incurring cross-AZ data transfer charges when enabled. Azure Load Balancer's Standard SKU enables the cross-zone equivalent by default.
 
+### Sticky Sessions
+
+By default, a load balancer spreads requests across targets independently, which breaks anything relying on server-local session state. **Sticky sessions** use a cookie to pin a client to the same target for the session's duration. It's a workaround, not a best practice — the real fix is a stateless application (session data in a shared cache/database instead of server memory), so any target can serve any request. Azure Application Gateway and Azure Load Balancer both support the equivalent cookie- or source-IP-based affinity.
+
+**Project usage:** `base/service.yaml` sets `sessionAffinity: ClientIP` with a 3-hour (`10800`s) timeout at the Kubernetes Service level — the same trade-off one layer down: it pins a client to the same pod by source IP rather than a cookie, useful given the app's SQLite file is pod-local rather than shared, so a client bouncing between replicas mid-session could otherwise see inconsistent state. This is the Kubernetes-native equivalent of ALB/Application Gateway sticky sessions, applied without needing either cloud's load balancer at all.
+
 ### Ingress → Real Load Balancer
 
-The AWS Load Balancer Controller (IRSA-deployed) watches Kubernetes `Ingress` objects annotated for ALB and translates host/path rules into ALB listener rules and target groups, registering pod IPs as targets. AKS's **Application Routing add-on** or a self-managed **Application Gateway Ingress Controller (AGIC)** play the equivalent role for Azure.
+The **AWS Load Balancer Controller** (IRSA-deployed) watches Kubernetes `Ingress` and `Service (type=LoadBalancer)` objects annotated for ALB/NLB and translates host/path rules into ALB listener rules and target groups, registering pod IPs as targets. A dedicated, tightly scoped IAM policy (rather than a broad managed policy) follows least privilege, restricting the controller to resources it created and tagged itself. AKS's **Application Routing add-on** or a self-managed **Application Gateway Ingress Controller (AGIC)** play the equivalent role for Azure.
 
-**Project usage:** this project bypasses both cloud-native controllers in favor of a single, portable **ingress-nginx** controller (`ingressClassName: nginx`) reused unmodified across the local, AWS, and Azure overlays — `base/ingress.yaml`'s single `host: devops-app.local` rule is patched per overlay (the local overlay adds Traefik-compatible annotations for k3s; both cloud overlays remove the fixed host entirely via a JSON-patch `- op: remove path: /spec/rules/0/host`, since a cloud load balancer's own DNS name is what's actually reached in those environments).
-
----
-
-## Security, Compliance & the Well-Architected Framework
-
-### Six Pillars of the Well-Architected Framework
-
-1. **Operational Excellence** — running and monitoring systems, continuously improving processes.
-2. **Security** — protecting data, systems, and assets through risk assessment and mitigation.
-3. **Reliability** — workloads performing their intended function correctly and consistently, recovering from failure.
-4. **Performance Efficiency** — using computing resources efficiently, adapting as demand and technology evolve.
-5. **Cost Optimization** — avoiding unnecessary costs, understanding spend over time.
-6. **Sustainability** — minimizing environmental impact.
-
-Azure's parallel framework, the **Well-Architected Framework** (Microsoft's own, similarly named), covers the same five/six pillars almost one-for-one (Reliability, Security, Cost Optimization, Operational Excellence, Performance Efficiency).
-
-### Security Pillar in This Project
-
-Defense in depth applies at multiple layers: network isolation (private subnets for nodes/RDS, delegated subnet + Private DNS for Azure PostgreSQL, security-group/NSG chaining instead of open CIDRs), encryption at rest (KMS for EKS secrets and RDS storage; TLS-only storage accounts and default-encrypted PostgreSQL Flexible Server on Azure) and in transit (`PGSSLMODE=require`, HTTPS at the ingress layer), least-privilege identity (IRSA/Workload-Identity-scoped roles per controller, condition-restricted policies), audit trails (EKS `api`/`authenticator` logs, VPC Flow Logs), and secrets handling (Sealed Secrets for GitOps instead of plaintext manifests) — each addressing a different attack surface rather than relying on a single control.
-
-### Encryption at Rest vs In Transit — Where Each Applies
-
-**At rest** protects stored data — implemented via KMS-backed RDS `storage_encrypted` and default-encrypted Azure Storage/PostgreSQL. **In transit** protects data moving across a network — implemented via `PGSSLMODE=require` (DB connections) and HTTPS/TLS at the ingress or ALB/Application Gateway. Both are necessary; encrypting only one leaves a real gap.
-
-### AWS WAF vs Azure WAF
-
-Both operate at the application layer (Layer 7), filtering malicious traffic via customizable rules based on IP, headers, query parameters; both support managed rule groups, real-time monitoring, and CAPTCHA/bot-challenge features — AWS WAF attaches to CloudFront/ALB/API Gateway, **Azure WAF** attaches to Application Gateway or Azure Front Door.
-
-### AWS Shield vs Azure DDoS Protection
-
-Both are managed DDoS protection operating primarily at Layers 3/4, guarding against volumetric/network-level attacks. **Shield Standard** is included free with every AWS account; **Shield Advanced** adds automatic application-layer mitigation and DRT access for a fee. **Azure DDoS Protection** has the same free "Network Protection" baseline (Basic, automatic) with a paid "IP Protection"/"Network Protection" Standard tier for advanced mitigation and rapid-response support.
-
-**Project usage:** this project relies on each cloud's free baseline DDoS protection (Shield Standard / Azure's basic DDoS protection) implicitly — no WAF, Shield Advanced, or Azure WAF/Front Door is currently provisioned by either Terraform or Pulumi; the ingress-nginx controller has no application-layer firewall in front of it today.
-
-### GuardDuty, Security Hub, Inspector, Macie vs Microsoft Defender for Cloud
-
-- **GuardDuty** — continuously analyzes VPC Flow Logs, CloudTrail events, and DNS logs with machine learning to flag suspicious activity (compromised credentials, crypto-mining, unusual API calls).
-- **Security Hub** — aggregates findings from GuardDuty, Inspector, Macie, and third-party tools into one dashboard, checking resources against standards (CIS, PCI-DSS).
-- **Inspector** — scans EC2 instances, ECR images, and Lambda functions for known CVEs and unintended network exposure, rescanning continuously.
-- **Macie** — uses machine learning to discover and classify sensitive data (PII, credentials) in S3, flagging public/unencrypted buckets.
-
-**Microsoft Defender for Cloud** is Azure's consolidated equivalent of all four — threat detection (GuardDuty-equivalent), a unified security posture dashboard (Security Hub-equivalent), container/registry vulnerability scanning (Inspector-equivalent), and sensitive-data discovery in storage (Macie-equivalent) in one product rather than four separate services.
-
-**Project usage:** `monitoring/trivy` (referenced by `run.sh`'s `ENABLE_TRIVY` flag and `.env.example`'s `TRIVY_*` settings) is this project's own answer to Inspector/Defender-for-Cloud-style image scanning — an in-cluster **Trivy** deployment scanning for `HIGH,CRITICAL` vulnerabilities on a schedule, rather than relying on AWS Inspector or Defender for Cloud directly. Neither GuardDuty, Security Hub, Macie, nor their Defender-for-Cloud equivalent is currently provisioned by Terraform or Pulumi.
-
-### Compliance Frameworks — What They Ask of Infrastructure
-
-| Framework | Applies to | Typical infra-level expectations |
-|---|---|---|
-| **SOC 2** (Type II) | SaaS/service providers | Access control, change management (PR review + IaC = evidence), logging, monitoring, incident response, vendor management |
-| **ISO/IEC 27001** | Any org with an ISMS | Risk assessment, Annex A controls, internal audit, continuous improvement |
-| **PCI DSS** | Card data | Network segmentation, encryption, vulnerability scanning, log retention, strict access |
-| **HIPAA** | US health data | Signed **BAA** with the cloud provider, encryption, audit logs, access control |
-| **GDPR** | EU residents' personal data | Lawful basis, data residency/transfer rules, erasure, breach notification within 72 h |
-| **India DPDP Act 2023** | Personal data of people in India | Consent and purpose limitation, security safeguards, breach notification, cross-border transfer rules (check the current Rules for timelines) |
-| **CIS Benchmarks** | Not law: hardening baselines | AWS/Azure Foundations, Linux, Kubernetes configuration checks |
-
-- **Shared responsibility again**: the provider's SOC 2/ISO/PCI report covers *their* layer. **Your workload is not compliant just because AWS/Azure is.** Get provider reports from **AWS Artifact** / **Azure Service Trust Portal** and map controls you own.
-- **Data residency**: pick regions deliberately; enforce with an **SCP** denying other regions (`aws:RequestedRegion`) or **Azure Policy "Allowed locations"**; keep keys, backups, and logs in-region too.
-- Evidence you will be asked for: access reviews, CloudTrail/Activity Log retention, encryption settings, patch status, backup restore tests, DR test results, change history (Git).
-
-### Landing Zones and Multi-Account Layout
-
-A **landing zone** is the pre-built, governed foundation new workloads land in:
-```text
-Organization root
-├── Security OU        → log-archive account (immutable org-wide CloudTrail/Config), security-tooling account
-├── Infrastructure OU  → shared networking (Transit Gateway, DNS), CI/CD tooling
-├── Workloads OU
-│   ├── Prod OU        → one account per app/team
-│   └── NonProd OU     → dev / staging accounts
-└── Sandbox OU         → experiments with hard budget caps
-```
-Baseline guardrails (SCPs/Azure Policy): deny disabling CloudTrail/GuardDuty, deny leaving the organization, region allow-list, deny root-user use, require encryption, block public S3/blob. Tooling: **AWS Control Tower / Landing Zone Accelerator**, **Azure Landing Zones** (Management Group hierarchy), GCP **Organization → Folders → Projects**.
-
-### Baselines and Posture Tools
-
-CIS Benchmarks (AWS, Azure, Kubernetes, Linux) are the common yardstick. Scan with **Prowler**, **ScoutSuite**, **Trivy**, **Checkov**, **kube-bench**; continuously with **AWS Config conformance packs + Security Hub standards** or **Azure Policy initiatives + Defender for Cloud**.
-
-### Most Common Cloud Breach Patterns (check yourself against this list)
-
-Publicly readable S3/blob · access keys committed to Git · wildcard IAM (`Action:*`, `Resource:*`) · IMDSv1 + SSRF · SSH/RDP/DB ports open to `0.0.0.0/0` · unpatched/unscanned images · publicly shared snapshots · no MFA on root/admin · exposed Kubernetes API/dashboard · overly broad CI roles.
-
-### If an Access Key Leaks (Runbook)
-
-1. **Deactivate immediately** (don't wait to understand it): `aws iam update-access-key --user-name U --access-key-id AKIA... --status Inactive`. AWS may also auto-attach `AWSCompromisedKeyQuarantine` for keys found on public GitHub.
-2. **Investigate**: `aws cloudtrail lookup-events --lookup-attributes AttributeKey=AccessKeyId,AttributeValue=AKIA...`. Look for new IAM users/roles/keys, instances in unusual regions (crypto-mining), new Lambda functions, S3 reads, changed trust policies.
-3. **Contain and clean**: delete attacker-created resources and identities, rotate anything the key could read (DB passwords, other secrets), check billing.
-4. **Remove from Git history** (`git filter-repo`/BFG) — **but treat the key as compromised regardless**; history scrubbing doesn't un-leak it.
-5. **Prevent**: pre-commit/CI secret scanning (**gitleaks**, **trufflehog**, GitHub push protection), prefer roles/OIDC over keys, least-privilege, alarms on root/key use.
+**Project usage:** this project bypasses both cloud-native controllers in favor of a single, portable **ingress-nginx** controller (`ingressClassName: nginx` throughout every overlay) reused unmodified across the local, AWS, and Azure overlays — keeping the Ingress object identical across every environment, cloud or local. `base/ingress.yaml`'s single `host: devops-app.local` rule is patched per overlay (the local overlay adds Traefik-compatible annotations for k3s; both cloud overlays remove the fixed host entirely via a JSON-patch `- op: remove path: /spec/rules/0/host`, since a cloud load balancer's own DNS name is what's actually reached in those environments).
 
 ---
 
-## Infrastructure as Code — Terraform, Pulumi and CloudFormation
+## Content Delivery and DNS
 
-### Infrastructure as Code (IaC)
+### CDN
 
-IaC means describing infrastructure (servers, networks, permissions) in text files instead of manually clicking through a console. Benefits: version-controlled (see exactly what changed and when, in Git), repeatable (spin up an identical environment for staging/prod), and reviewable (a teammate reads a pull request before infrastructure changes go live) — instead of undocumented, hard-to-reproduce manual changes.
+A CDN is a network of servers positioned close to end users worldwide, each holding a cached copy of content, so a nearby edge location serves the request instead of round-tripping to the origin. This reduces latency and takes load off the origin. CloudFront is AWS's CDN; **Azure CDN**/**Azure Front Door** is Azure's.
 
-**Project usage:** `platform/infra/terraform` (AWS) and `platform/infra/Pulumi` (Azure) are two independent, standalone IaC programs for the same application, selected by `run.sh`'s `select_cloud_provider` step — neither imports from the other or from `run.sh` itself, by explicit design (see the "STANDALONE BY DESIGN" docstrings throughout the Pulumi files and the header comments in the Terraform files).
+### CloudFront with S3 vs ALB Origin, and Azure's Equivalent
 
-### AWS CloudFormation
+With an **S3 origin**, CloudFront is typically used for static assets, ideally with **Origin Access Control (OAC)** so the bucket itself stays fully private and reachable only through CloudFront. With an **ALB/custom origin**, CloudFront can front dynamic applications, terminate TLS at the edge, provide DDoS absorption (via Shield integration), and cache selectively based on cache-control headers. Azure Front Door offers the same two origin shapes (Blob Storage origin with private-endpoint-style access restriction, or an App Service/Application Gateway origin for dynamic content).
 
-AWS's native IaC service — resources are defined in a JSON/YAML **template**, and CloudFormation creates/updates/deletes them as a single **stack**, tracking dependencies automatically. Azure's closest native equivalent is **ARM templates** / **Bicep** (Bicep being to ARM roughly what a cleaner HCL-like syntax is to raw JSON).
+**Project usage:** neither cloud's CDN is provisioned in this project — the ingress-nginx controller is reached directly (via NodePort locally, or whatever load balancer the cluster's cloud provider attaches to the `LoadBalancer`/`ClusterIP` Service in production), with no CloudFront/Front Door layer caching or absorbing traffic in front of it.
 
-### CloudFormation vs Terraform vs Pulumi
+### AWS Global Accelerator vs CloudFront, and Azure's Equivalents
 
-CloudFormation and ARM/Bicep are single-cloud, free, and natively understand rollback-on-failure and drift detection against that cloud's own state. **Terraform** is multi-cloud (AWS, Azure, GCP, Kubernetes, and more in one tool), uses HCL instead of JSON/YAML, and manages its own state file (stored/secured separately, e.g., in S3). **Pulumi** is also multi-cloud, but instead of a bespoke templating language, it uses a real general-purpose programming language (Python, in this project) — meaning loops, conditionals, functions, and imports are just the language's own, rather than HCL's more limited expression syntax, at the cost of needing that language's runtime and dependency management (`requirements.txt`, a virtualenv) alongside the tool itself.
+Both AWS options use the provider's edge network for different traffic types. **CloudFront** caches and serves **HTTP(S) content** closer to users. **Global Accelerator** doesn't cache anything — it gives static Anycast IPs that route **any TCP/UDP traffic** onto AWS's private backbone as early as possible, improving performance for non-cacheable or non-HTTP workloads and enabling instant regional failover without a DNS change. Azure's equivalents are **Azure Front Door** (CloudFront-shaped — HTTP(S) CDN plus global L7 load balancing) and **Azure Traffic Manager** (DNS-based global routing, closer in spirit to Global Accelerator's failover role, though Traffic Manager works at the DNS layer rather than the network layer).
 
-**Project usage:** this project picks **Terraform** for AWS (portability, readable syntax) and **Pulumi** for Azure specifically in Python (letting `env_loader.py` and `function_packaging.py` reuse plain Python code — `pathlib`, `zipfile`, `dotenv` — directly inside the infrastructure program itself, something HCL alone can't do as naturally). Both still avoid CloudFormation/Bicep to keep the two cloud targets structurally similar to reason about side by side.
+### DNS
 
-### Terraform State File
+DNS (Domain Name System) translates human-readable names into IP addresses. **Amazon Route 53** is AWS's managed DNS service — it translates domain names to IP addresses and can register domains outright ("Route 53" because DNS traditionally runs on port 53). **Azure DNS** is the direct equivalent for hosting zones and records; domain registration on Azure is typically handled through App Service Domains or a third-party registrar instead.
 
-Terraform needs to remember what it already created so it doesn't recreate or lose track of resources. The **state file** (`terraform.tfstate`) is Terraform's record of "here's what I've built and its current settings." Losing it is a real problem — Terraform stops knowing what already exists (see the state-loss recovery scenario later in this document). Pulumi keeps the conceptually identical thing — a **stack state** — managed by default in Pulumi's own backend (or self-hosted in S3/Azure Blob) rather than a single file you point at yourself.
+### DNS Record Types
 
-### `terraform plan` and `terraform apply`
+- **A** — hostname → IPv4 address.
+- **AAAA** — hostname → IPv6 address.
+- **CNAME** — hostname → another hostname (can't be used at the zone apex/root).
+- **Alias** (AWS-specific) — like CNAME but works at the zone apex and points to AWS resources for free, with no extra lookup cost. Azure's equivalent is an **Alias record set**, serving the same zone-apex purpose for Azure resources.
+- **MX** — mail server routing.
+- **TXT** — arbitrary text, commonly used for domain verification (SPF/DKIM, certificate validation).
 
-`terraform plan` compares code to current state and shows what *would* change, without making changes — a dry run. `terraform apply` executes those changes against real resources. Pulumi's equivalents are `pulumi preview` and `pulumi up`.
+**Project usage:** `base/ingress.yaml`'s `host: devops-app.local` is a placeholder A-record-style hostname meant for local `/etc/hosts` entries (see `.env.example`'s `INGRESS_HOST` comment) — no real Route 53/Azure DNS zone is provisioned by either IaC program; production overlays remove the fixed host entirely and expect whatever DNS the operator points at the cloud load balancer's own address.
 
-**Project usage:** `run.sh`'s `select_infra_action` menu (Plan / Apply / Destroy) maps directly onto `terraform plan|apply|destroy`, invoked by `deploy_infra.sh` with `INFRA_ACTION`/`CLOUD_PROVIDER` passed through from the interactive menu or `.env`.
+### DNS Gotchas
 
-### `.terraform.lock.hcl`
+- Changes "propagate" because of **TTL caching**, not magic. Lower the TTL a day **before** a migration, raise it after.
+- **Negative caching**: an NXDOMAIN answer is cached too. Creating a record right after a failed lookup can still fail for minutes.
+- CNAME can't sit at the zone apex (use Route 53 Alias / Azure alias records). **Split-horizon**: same name resolves differently inside a VPC (private hosted zone) and outside.
+- Private zones need DNS support/hostnames enabled on the VPC; Kubernetes adds `ndots:5` search-path lookups.
 
-Terraform's dependency lock file, maintained automatically by `terraform init`, pinning exact provider versions and their cryptographic hashes so every `terraform apply` — on any machine, at any time — resolves to identical provider code, not just a version *range*. Pulumi's equivalent is the language runtime's own lock file (`requirements.txt` pinning exact package versions, or a generated `Pulumi.lock`/virtualenv freeze), serving the same reproducibility purpose one layer down at the Python-package level rather than the provider-plugin level.
+### Route 53 Routing Policies
 
-**Project usage:** `.terraform.lock.hcl` pins `hashicorp/aws ~> 5.0` to the exact resolved `5.100.0`, plus `archive`, `cloudinit`, `null`, `time`, and `tls` providers pulled in transitively by the `terraform-aws-modules/eks/aws` and `vpc/aws` modules — none of these are referenced directly in this project's own `.tf` files, only by the community modules it depends on.
+- **Simple** — single resource, no health checking.
+- **Weighted** — distribute traffic across resources by percentage (canary/A-B testing at the DNS level).
+- **Latency-based** — route to the region with lowest latency for the requester.
+- **Failover** — active-passive; route to a primary, switch to a secondary if its health check fails.
+- **Geolocation / Geoproximity** — route based on user location or bias traffic toward specific regions.
+- **Multivalue answer** — return multiple healthy IPs, basic client-side load distribution and health checking without a full load balancer.
 
-### Terraform Providers and Modules
+Azure DNS itself doesn't carry routing-policy logic the way Route 53 does — that logic instead lives one layer up, in **Azure Traffic Manager** (weighted, priority/failover, performance/latency, geographic — the same five ideas) or **Azure Front Door** (which adds latency-based and priority routing at the HTTP layer).
 
-A **provider** is the plugin translating HCL resource blocks into actual API calls for one platform (`hashicorp/aws`). A **module** is a reusable, versioned bundle of resources — this project consumes two community modules rather than hand-writing every EKS/VPC resource: `terraform-aws-modules/vpc/aws` (`vpc.tf`) and `terraform-aws-modules/eks/aws` plus `iam/aws//modules/iam-role-for-service-accounts-eks` (`eks.tf`). Pulumi has an equivalent **Component Resource** concept for bundling reusable infrastructure, though this project's Azure program instead factors reuse as plain Python functions (`create_distributed_storage`, `create_self_healing`, `create_dr_backup`) in separate files, each returning the resources it created — a lighter-weight pattern than a full Pulumi Component Resource, appropriate for a single-stack program rather than a package meant for reuse across many stacks.
+### Route 53 Health Checks
 
-### Remote State and Locking (Never Keep Production State on a Laptop)
+Route 53 sends automated HTTP/HTTPS/TCP requests to an endpoint at a configurable interval (default 30s) from multiple global locations, marking it unhealthy after a threshold of consecutive failures. Routing policies (Failover, Multivalue, Weighted) use this status to stop sending traffic to unhealthy endpoints — DNS itself has no concept of "down" without a health check attached. Traffic Manager's health checks work identically, feeding its own failover/priority routing.
 
-State holds resource IDs and often **secrets in plaintext**. It must be shared, versioned, encrypted, access-controlled, and **locked** so two applies can't run at once.
-```hcl
-terraform {
-  required_version = ">= 1.10"
-  backend "s3" {
-    bucket       = "myorg-terraform-state"
-    key          = "devops-app/prod/terraform.tfstate"
-    region       = "ap-south-1"
-    encrypt      = true
-    use_lockfile = true      # S3-native locking (Terraform 1.10+); the DynamoDB lock table is deprecated
-  }
-}
-```
-```hcl
-# Azure equivalent: blob lease provides locking automatically
-terraform {
-  backend "azurerm" {
-    resource_group_name  = "tfstate-rg"
-    storage_account_name = "tfstate12345"
-    container_name       = "tfstate"
-    key                  = "devops-app/prod.tfstate"
-    use_azuread_auth     = true
-  }
-}
-```
-- Enable **bucket versioning** (restore a previous state), block public access, restrict who can read state.
-- Split state by environment **and** by blast-radius layer (network / data / app) rather than one giant state.
-- Bootstrap problem: the state bucket itself is created by a tiny separate config or CLI script.
-- **OpenTofu** is the community, Linux Foundation fork of Terraform (after HashiCorp's 2023 license change); mostly drop-in compatible, adds features like state encryption.
-- **Pulumi**: `pulumi login s3://bucket` / `azblob://container` (or Pulumi Cloud); config secrets are encrypted per stack (`pulumi config set --secret`, `--secrets-provider awskms://...` or `azurekeyvault://...`); `pulumi stack export/import` is the state backup/repair path; `pulumi refresh` syncs state with reality.
-
-### Terraform Language Essentials
-
-| Concept | Key point |
-|---|---|
-| `variable` | Typed (`string`, `number`, `list(...)`, `map(...)`, `object({...})`), with `default`, `validation {}`, `sensitive = true` |
-| `locals`, `output`, `data` | Computed values / exported values / read-only lookups of existing things |
-| `count` vs `for_each` | **Prefer `for_each` with stable keys.** With `count`, deleting list item 0 shifts every index and Terraform destroys/recreates the rest |
-| `dynamic` blocks, `for` expressions | Generate repeated nested blocks / transform collections |
-| `lifecycle` | `create_before_destroy`, `prevent_destroy` (guard DBs), `ignore_changes` (autoscaler-managed fields), `replace_triggered_by`, `precondition`/`postcondition` |
-| `depends_on` | Only when no attribute reference exists (see the earlier Lambda/S3 example) |
-| `moved {}` | Rename/move a resource in code **without** destroying it |
-| `import {}` | Adopt an existing resource into state (Terraform 1.5+) |
-| Functions | `merge`, `lookup`, `try`, `coalesce`, `cidrsubnet`, `templatefile`, `jsonencode` |
-
-```hcl
-variable "buckets" {
-  type = map(object({ versioning = bool }))
-}
-resource "aws_s3_bucket" "this" {
-  for_each = var.buckets
-  bucket   = "${var.app_name}-${each.key}"
-}
-
-moved { from = aws_s3_bucket.files  to = aws_s3_bucket.files_primary }
-
-import { to = aws_s3_bucket.legacy  id = "my-existing-bucket" }   # then: terraform plan -generate-config-out=generated.tf
-```
-
-### Everyday CLI Workflow
-
-```bash
-terraform fmt -recursive && terraform validate     # style + syntax (run in CI too)
-terraform init -upgrade                            # fetch providers/modules, update the lock file
-terraform plan -out=tfplan                         # save the plan...
-terraform apply tfplan                             # ...apply exactly what was reviewed
-terraform plan -detailed-exitcode                  # exit 0 = no change, 1 = error, 2 = changes (use for drift checks)
-terraform plan -refresh-only                       # detect drift without proposing changes
-terraform apply -replace=aws_instance.web          # force recreate one resource (replaces deprecated `taint`)
-terraform state list ; terraform state show ADDR   # inspect
-terraform state mv A B ; terraform state rm ADDR   # refactor state (prefer moved {} blocks)
-terraform force-unlock <LOCK_ID>                   # only after confirming no apply is running
-terraform providers lock -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_arm64   # lock file works on every OS in the team
-TF_LOG=DEBUG terraform plan 2> debug.log           # provider/API-level debugging
-```
-> `-target` is an emergency scalpel, not a workflow. If you need it routinely, your state is too big.
-
-### Environments: Directories vs Workspaces vs Stacks
-
-| Approach | Verdict |
-|---|---|
-| **Directory per environment** (`envs/dev`, `envs/prod`) calling shared **versioned modules** | Recommended. Separate state, separate credentials, safe diffs |
-| Terraform **workspaces** | Same code and backend, different state; easy to `apply` to prod by accident. Fine for short-lived copies, weak for dev/prod separation |
-| **Terragrunt** | Wrapper to keep backends/inputs DRY across many directories |
-| **Pulumi stacks** | `pulumi stack init prod`; per-stack config; the built-in equivalent |
-
-### Drift
-
-Drift = reality differs from code (someone edited in the console, an autoscaler changed a value). Detect with a **scheduled `plan -detailed-exitcode`** (or `pulumi refresh --diff`); resolve by re-applying code, `import`, or updating code to match. Prevent by removing human write access in prod (SCPs / Azure Policy / least-privilege roles) so changes go through Git.
-
-### IaC in CI/CD
-
-1. PR: `fmt -check`, `validate`, `tflint`, security scan (**Trivy config**/**Checkov**; tfsec merged into Trivy), policy-as-code (**OPA/Conftest**, Sentinel), cost diff (**Infracost**), then `terraform plan` posted as a PR comment.
-2. Merge to main: human approval for prod, `terraform apply tfplan` with **short-lived cloud credentials (OIDC/role), not stored keys**.
-3. Pin everything: `required_version`, `required_providers` with `~>`, module versions (Git tags/registry), **commit `.terraform.lock.hcl`**.
-4. Tools that run this loop: Atlantis, HCP Terraform, Spacelift, env0, GitHub Actions, or your Jenkins pipeline.
-
-### Configuration Management and Image Building
-
-**Terraform/Pulumi create infrastructure (provision). Ansible configures what runs on it.** Typical flow: Terraform makes the VM → Ansible (or cloud-init) installs/configures → or Packer bakes the result into an image once.
-
-**Ansible**: agentless (SSH), YAML playbooks, **idempotent modules**, push model.
-```yaml
-# site.yml
-- hosts: web
-  become: true
-  vars: { nginx_port: 8080 }
-  tasks:
-    - name: Install nginx
-      ansible.builtin.package: { name: nginx, state: present }
-    - name: Render config
-      ansible.builtin.template: { src: nginx.conf.j2, dest: /etc/nginx/nginx.conf, mode: "0644" }
-      notify: Reload nginx
-    - name: Ensure running
-      ansible.builtin.service: { name: nginx, state: started, enabled: true }
-  handlers:
-    - name: Reload nginx
-      ansible.builtin.service: { name: nginx, state: reloaded }
-```
-```bash
-ansible all -i inventory.ini -m ping                          # connectivity
-ansible-playbook -i inventory.ini site.yml --check --diff     # dry run showing changes
-ansible-playbook -i inventory.ini site.yml --limit web01 -e nginx_port=9090
-ansible-inventory -i aws_ec2.yml --graph                      # dynamic inventory from the cloud API
-ansible-vault encrypt_string 's3cr3t' --name db_password      # encrypted values in Git
-```
-> `shell`/`command` tasks are **not** idempotent unless you add `creates:`/`changed_when:`. Use real modules.
-
-**Packer** builds a **golden image** (AMI / Azure managed image) from a template: launch a temp VM, run provisioners (shell/Ansible), snapshot it. `packer init && packer validate . && packer build .`. Also **EC2 Image Builder** / **Azure Image Builder**. Trade-off: *bake* (fast, consistent boot, rebuild to change) vs *fry* (generic image + user-data/Ansible at boot: flexible, slower, more can fail at runtime).
-
-### Pulumi's Standalone-by-Design Pattern
-
-Every Pulumi file in this project (`storage.py`, `self_healing.py`, `dr.py`, `postgres_backup_identity.py`, `monitoring_alerts.py`, `function_packaging.py`) follows the same shape: a single function taking everything it needs as explicit keyword arguments (`enabled`, `app_name`, `rg`, resources from other functions), with no imports from `run.sh`, sibling shell scripts, or the Terraform side of the repo. `__main__.py` wires them together by call order, and each one can be individually disabled via a boolean flag (`enable_self_healing`, `enable_dr_backup`, `enable_cloud_storage`) read through `get_env()`. This mirrors the same "standalone" principle `main.tf`/`rds.tf`/`vpc.tf` follow on the Terraform side — each `.tf` file readable and reasoned about mostly on its own, wired together only through `locals` and resource references in `main.tf`.
-
-### `env_loader.py` — a Single Source of Configuration Truth
-
-Both IaC programs are designed to run correctly on their own — `cd platform/infra/pulumi && pulumi up` should work whether or not it was launched through `run.sh`. `env_loader.py` implements this for the Azure side: it walks upward from its own file location looking for a `.env` file (respecting an explicit `ENV_FILE` override), loads it via `python-dotenv`, and only `setdefault`s values that aren't already present in the process environment — so anything `run.sh` already exported (or a CI/CD secret) always wins over the file. `get_env()`/`get_secret()` in `__main__.py` then layer Pulumi's own `pulumi config` on top as the highest-priority override. The Terraform side achieves the equivalent precedence more simply, since `run.sh` sources `.env` with `set -a` before invoking `deploy_infra.sh`, so every `TF_VAR_*` value is already a real environment variable by the time Terraform runs — no separate discovery/loading code is needed on that side.
-
-
-### Vault Server
-Vault Server is the main service of HashiCorp Vault. It securely stores, manages, and controls access to sensitive information such as passwords, API keys, database credentials, and encryption keys.
-
-Think of it as a secure locker for your application's secrets.
-
-#### Why do we use Vault Server?
-
-Imagine your application connects to a database. You need a database username and password.
-
-Without Vault:
-
-```
-DB_USERNAME = "admin"DB_PASSWORD = "mypassword123"
-```
-
-These credentials are stored directly in your code, which is risky.
-
-With Vault, your application retrieves the credentials securely from Vault Server when needed.
-
-1. Application (Requests database credentials)
-2. Vault Server (Authenticates requests and controls secret access)
-3. Secrets / Database (Credentials are securely managed by Vault)
-
-```
-API Address: http://127.0.0.1:8200
-Root Token: hvs.xxxxxxxxxxxxx
-```
-
-Here's what these mean:
-
-- API Address: The URL applications and the Vault CLI use to communicate with Vault.
-- Root Token: A highly privileged token used to authenticate with Vault.
-- Port 8200: Vault's default API port.
-- Dev mode: Starts Vault with automatic initialization and unsealing, using temporary, in-memory storage.
-
-The server continues running in that terminal until you stop it, typically with `Ctrl+C`.
-
-#### Vault Server vs. Vault CLI
-
-| Component    | Purpose                                                  |
-| ------------ | -------------------------------------------------------- |
-| Vault Server | Stores and manages secrets and enforces access policies. |
-| Vault CLI    | Lets you interact with Vault using terminal commands.    |
-| Vault API    | Allows applications and tools to communicate with Vault. |
-
-For example:
-
-```
-vault server -dev # Starts the server.
-vault status      # Checks the server's status.
-vault kv put secret/app password=hello123   # Stores a secret through the CLI.
-vault kv get secret/app   # Retrieves that secret.
-```
 ---
 
-#### Vault in Production (the section above is dev mode only)
-
-Dev mode is **in-memory, auto-unsealed, with a known root token. Never use it outside a laptop.**
-
-- **Seal/unseal**: Vault starts **sealed** (data is encrypted; the master key is split with Shamir). `vault operator init -key-shares=5 -key-threshold=3` then 3 people `vault operator unseal`. In production use **auto-unseal** with AWS KMS / Azure Key Vault so restarts don't need humans.
-- **Storage**: integrated **Raft** (HA cluster, 3 or 5 nodes) is the modern default. Run behind TLS. Revoke the initial root token after setup (`vault token revoke`).
-- **Auth methods** prove *who you are*: Kubernetes, AWS/Azure IAM, OIDC, AppRole (for CI). **Policies** say *what you may do*. **Tokens/leases** expire and can be revoked.
-- **Secrets engines**: `kv-v2` (static secrets), `database` (**dynamic**, short-lived DB credentials created per request), `pki` (issues certs), `transit` (encryption-as-a-service).
-```bash
-vault secrets enable -path=secret kv-v2
-vault kv put secret/myapp db_password='...'
-vault policy write myapp - <<'EOF'
-path "secret/data/myapp/*" { capabilities = ["read"] }   # NOTE: kv-v2 policies need the /data/ segment
-EOF
-vault auth enable kubernetes
-vault write auth/kubernetes/role/myapp bound_service_account_names=myapp \
-  bound_service_account_namespaces=devops-app policies=myapp ttl=1h
-vault read database/creds/readonly      # dynamic engine: returns a username/password that expires
-vault audit enable file file_path=/var/log/vault_audit.log
-```
-Pods fetch secrets via **Vault Agent injector**, the **CSI provider**, or **External Secrets Operator**.
-
-| Tool | Secret lives in | Git-friendly | Rotation | Complexity |
-|---|---|---|---|---|
-| **Sealed Secrets** (this project) | Encrypted manifest in Git; decrypted in-cluster | Yes | Manual | Low (back up the controller key!) |
-| **SOPS** (+ age/KMS) | Encrypted values inside YAML/JSON in Git | Yes | Manual | Low |
-| **External Secrets Operator** | Cloud secret manager / Vault; synced into K8s Secrets | Yes (references only) | Automatic | Medium |
-| **Vault** | Vault | Yes (references only) | Dynamic/automatic | High (you operate it) |
-| **Secrets Manager / Key Vault + CSI** | Cloud secret manager | Yes (references only) | Built-in | Medium |
-
-## Serverless & Event-Driven Compute — Lambda and Azure Functions
+## Serverless and Event-Driven Compute — Lambda and Azure Functions
 
 ### Serverless
 
@@ -1964,15 +2378,18 @@ Lambda runs code in response to events (API calls, S3 uploads, queue messages, s
 
 `function_packaging.py` is a shared helper used by both `self_healing.py` and `dr.py`: it zips a function's folder plus the shared `host.json` with stdlib `zipfile`, uploads the zip as a private blob (`pulumi.FileAsset`) to a `deployments` container on that Function App's own storage account, generates a read-only, 10-year SAS URL via `blob_sas_url()`, and points `WEBSITE_RUN_FROM_PACKAGE` at that URL — Azure Functions' own supported mechanism for running directly from a package. This means a single `pulumi up` builds and deploys the function code with no separate build/CI step, mirroring how `backup_verifier.tf`'s `data.archive_file` zips `backup_verifier.py` inline for the equivalent AWS Lambda, with no separate build pipeline either.
 
-### Lambda Cold Start and Mitigation
+### Lambda Execution Lifecycle, Cold Start and Mitigation
 
-A cold start happens when no warm execution environment is available and one must be provisioned from scratch (download code, initialize the runtime, run top-level init code) — adding tens of milliseconds to several seconds of latency. Mitigations: **Provisioned Concurrency** (keeping environments pre-warmed, at extra cost), minimizing package size and heavy top-level SDK initialization, a lighter runtime, and **SnapStart** (Java) restoring from a post-init snapshot. Azure Functions' equivalent mitigation is **Premium plan pre-warmed instances**, unused by this project's Consumption-plan functions since neither is latency-sensitive (an alert-triggered remediation and a daily timer both tolerate a cold start).
+A Lambda invocation involves: request initialization, execution environment allocation or reuse, runtime initialization, handler execution, and response or asynchronous event completion.
 
-### Idempotency
+A **cold start** happens when no warm execution environment is available and one must be provisioned from scratch (download code, initialize the runtime, run top-level init code) — adding tens of milliseconds to several seconds of latency. A warm invocation can reuse an existing environment. Mitigations: **Provisioned Concurrency** (keeping environments pre-warmed, at extra cost), minimizing package size and heavy top-level SDK initialization, a lighter runtime, and **SnapStart** (Java) restoring from a post-init snapshot. Azure Functions' equivalent mitigation is **Premium plan pre-warmed instances**, unused by this project's Consumption-plan functions since neither is latency-sensitive (an alert-triggered remediation and a daily timer both tolerate a cold start).
 
-An operation is idempotent if running it multiple times has the same effect as running it once — "set balance to $100" is idempotent; "add $10 to balance" is not. This matters because both Lambda (on retries) and Azure Functions (on retries) can deliver the same trigger more than once. The usual fix is tracking a unique event/message ID and skipping already-handled ones.
+### Lambda Versions and Aliases
 
-**Project usage:** `dr_backup/__init__.py` writes its checkpoint to a fixed blob name (`dr-checkpoints/latest.json`) with `overwrite=True` — naturally idempotent, since re-running the timer trigger twice in the same window just overwrites the same object rather than creating duplicates. `self_healing/__init__.py`'s AKS remediation (`begin_create_or_update` with the pool's *current* parameters) and PostgreSQL restart are both naturally idempotent operations too — triggering either twice in quick succession has the same effect as once.
+- `$LATEST` is the mutable development version.
+- Published versions are immutable snapshots.
+- Aliases such as `dev`, `staging` and `prod` point to specific published versions.
+- Weighted aliases support gradual traffic shifting between versions.
 
 ### Lambda Invocation Types
 
@@ -1982,6 +2399,14 @@ An operation is idempotent if running it multiple times has the same effect as r
 
 **Project usage:** `backup_verifier.tf`'s Lambda is invoked **asynchronously**, triggered by an S3 `ObjectCreated` event (`aws_s3_bucket_notification`) with the invoke permission scoped via `aws_lambda_permission`. Azure's `self_healing` function is invoked **synchronously** over HTTP by the Action Group webhook (an HTTP-triggered Azure Function is inherently request/response); `dr_backup` is invoked on Azure's **timer trigger**, which has no direct AWS Lambda invocation-type equivalent — the closest AWS analog would be an EventBridge scheduled rule invoking Lambda asynchronously.
 
+### Lambda Destinations vs DLQ and Failure Handling
+
+For asynchronous invocations, a DLQ stores failed invocation events. Destinations can route successful or failed invocation records to supported targets, including SQS, SNS, EventBridge and Lambda — providing richer invocation-result information than a traditional DLQ.
+
+For asynchronous invocation: Lambda retries eligible function errors automatically; configure maximum event age and retry attempts; route exhausted failures to a destination or DLQ; make handlers idempotent because duplicate processing is possible.
+
+For SQS event source mappings: configure visibility timeout appropriately; use partial batch responses to avoid retrying successful messages; configure redrive policies and DLQs; use maximum concurrency to protect downstream systems.
+
 ### Lambda Layers
 
 A Layer is a versioned ZIP of shared code/libraries attachable to multiple functions, keeping deployment packages small and avoiding duplicated dependencies. This project doesn't use Layers — `backup_verifier.py`'s only dependency is `boto3`, already provided by the Lambda runtime itself, so no layer is needed. Azure Functions' loose equivalent is a shared **Extension Bundle** (`host.json`'s `extensionBundle`) or a shared package referenced by multiple function apps' `requirements.txt` — `functions/host.json` in this project declares one such bundle shared by both the `self_healing` and `dr_backup` functions.
@@ -1990,19 +2415,151 @@ A Layer is a versioned ZIP of shared code/libraries attachable to multiple funct
 
 **Concurrency** is the number of simultaneous invocations. By default, all functions in an account share a regional pool (commonly 1,000). **Reserved Concurrency** caps/guarantees a specific number for one function, protecting others from starvation but throttling that function once its cap is hit. **Provisioned Concurrency** keeps a set number of environments pre-warmed at all times, eliminating cold starts for that capacity. Neither is configured for this project's Lambda or Azure Functions — both are low-frequency (event- or daily-timer-triggered) workloads where the default shared pool and occasional cold start are an acceptable trade-off.
 
-### SQS vs SNS vs Azure Service Bus and Event Grid
+### Lambda VPC Networking
 
-**SQS** is a **pull-based message queue** — consumers poll for messages, typically processed by exactly one consumer. **SNS** is a **pub/sub push-based** topic — one published message fans out to many subscribers simultaneously. A common pattern is **SNS fan-out to SQS**. Azure's nearest equivalents are **Service Bus Queues** (SQS-shaped) and **Event Grid** or **Service Bus Topics** (SNS-shaped pub/sub fan-out).
+A Lambda function attached to a VPC uses Hyperplane ENIs to access resources in configured subnets. Important distinction: attaching Lambda to a public subnet does not automatically give it public internet access. For outbound internet access, configure an appropriate NAT or egress architecture. For private AWS service access, use suitable VPC endpoints.
 
-**Project usage:** `alerts.tf`'s `aws_sns_topic.alerts` is this project's only SNS usage — a straightforward fan-out to an optional email subscription, not to SQS. There is no SQS usage in this project at all. On the Azure side, `monitoring_alerts.py`'s Action Group plays a role closer to SNS (fan-out to a webhook receiver) than to Service Bus, since nothing here needs a durable, poll-based queue.
+### Lambda Security and Best Practices
 
-### SQS Standard vs FIFO, and Dead Letter Queues
+- Use a dedicated execution role for each function.
+- Restrict access to specific resources.
+- Store secrets in Secrets Manager or Parameter Store.
+- Enable encryption for environment variables with KMS where required.
+- Avoid logging credentials or sensitive data.
+- Validate event payloads.
+- Keep functions stateless.
+- Reuse SDK clients outside the handler.
+- Set realistic timeout and memory values.
+- Monitor throttles, errors and duration.
+- Use reserved concurrency to protect downstream systems.
+- Use provisioned concurrency for latency-sensitive workloads.
+- Use versions and aliases for controlled deployments.
 
-**Standard** queues offer near-unlimited throughput with **at-least-once delivery** and best-effort ordering. **FIFO** queues guarantee strict ordering and **exactly-once processing** but cap throughput and require a `MessageGroupId`. A **Dead Letter Queue (DLQ)** is a separate queue a source queue forwards messages to after repeated processing failures (`maxReceiveCount`), preventing one poison message from blocking the queue and giving a place to inspect failures. Azure Service Bus offers the equivalent split (standard at-least-once delivery vs sessions-based ordering) plus a built-in **dead-letter sub-queue** on every queue/subscription.
+### SQS — Queues, Visibility Timeout, DLQ and Scaling
 
-### SQS Visibility Timeout
+Amazon Simple Queue Service provides durable, distributed message queuing. **SQS** is a **pull-based message queue** — consumers poll for messages, typically processed by exactly one consumer. Azure's nearest equivalent is **Service Bus Queues**.
 
-When a consumer receives a message, SQS doesn't delete it immediately — it becomes **invisible** to other consumers for a set period (default 30s) while being processed. If the consumer doesn't delete it before the timeout expires (e.g., it crashed), the message reappears for another consumer — the actual mechanism behind "at-least-once delivery." Azure Service Bus's equivalent is its **lock duration** on a received message, working identically.
+**Standard vs FIFO.** **Standard** queues offer near-unlimited throughput with **at-least-once delivery** and best-effort ordering. **FIFO** queues guarantee strict ordering (within a message group, via `MessageGroupId`), support deduplication and **exactly-once processing**, but cap throughput. Azure Service Bus offers the equivalent split (standard at-least-once delivery vs sessions-based ordering).
+
+**Visibility timeout.** When a consumer receives a message, SQS doesn't delete it immediately — it becomes **invisible** to other consumers for a set period (default 30s) while being processed. If the consumer doesn't delete it before the timeout expires (e.g., it crashed), the message reappears for another consumer — the actual mechanism behind "at-least-once delivery." Set the visibility timeout longer than normal processing time and extend it when long-running processing requires it. Azure Service Bus's equivalent is its **lock duration** on a received message, working identically.
+
+**Long polling.** Long polling waits for messages instead of repeatedly returning empty responses. It reduces unnecessary API calls and cost.
+
+```bash
+aws sqs receive-message \
+  --queue-url https://sqs.ap-south-1.amazonaws.com/123456789012/orders \
+  --wait-time-seconds 20 \
+  --max-number-of-messages 10
+```
+
+**Dead Letter Queues.** A **DLQ** is a separate queue a source queue forwards messages to after repeated processing failures (`maxReceiveCount`, set through a redrive policy), preventing one poison message from blocking the queue and giving a place to inspect failures. Azure Service Bus has a built-in **dead-letter sub-queue** on every queue/subscription.
+
+**Scaling and backpressure.** Monitor ApproximateNumberOfMessagesVisible, ApproximateAgeOfOldestMessage, NumberOfMessagesReceived and NumberOfMessagesDeleted. Consumers can scale based on queue depth, message age and processing capacity.
+
+**Project usage:** there is no SQS usage in this project at all.
+
+### SNS — Pub/Sub, Fan-Out and Filtering
+
+**SNS** is a **pub/sub push-based** topic — one published message fans out to many subscribers simultaneously. Common subscriber types include SQS queues, Lambda functions, HTTPS endpoints, email and SMS. Azure's nearest equivalents are **Event Grid** or **Service Bus Topics** (pub/sub fan-out). A common pattern is **SNS fan-out to SQS**.
+
+```text
+                  SNS Topic
+                 /    |    \
+                /     |     \
+             SQS A  SQS B  Lambda
+               |      |
+           Consumer  Consumer
+```
+
+Each subscriber receives its own copy of the message.
+
+**Message filtering.** Subscription filter policies allow subscribers to receive only messages matching specific attributes or supported message-body filters:
+
+```json
+{
+  "eventType": ["ORDER_CREATED"],
+  "environment": ["production"]
+}
+```
+
+**SNS FIFO** supports ordered message delivery and deduplication for compatible FIFO subscriber patterns.
+
+**Project usage:** `alerts.tf`'s `aws_sns_topic.alerts` is this project's only SNS usage — a straightforward fan-out to an optional email subscription, not to SQS. On the Azure side, `monitoring_alerts.py`'s Action Group plays a role closer to SNS (fan-out to a webhook receiver) than to Service Bus, since nothing here needs a durable, poll-based queue.
+
+### EventBridge — Event Routing
+
+EventBridge is AWS's event bus — routing events (from AWS services, SaaS partners, or your own apps) to targets based on **rules** matching event content, and can run targets on a **schedule**. Unlike SNS's simple fan-out, EventBridge rules filter on the actual JSON payload. **Azure Event Grid** is the direct equivalent — schema-aware event routing with content-based filtering, subscribable by Functions, Service Bus, webhooks, and more.
+
+**Core components:**
+
+- **Event Bus:** receives and distributes events.
+- **Event:** a JSON representation of something that happened.
+- **Rule:** matches events against event patterns or schedules.
+- **Target:** receives matching events.
+- **Archive:** stores events for later replay.
+- **Replay:** reprocesses archived events.
+
+```json
+{
+  "source": ["aws.ec2"],
+  "detail-type": ["EC2 Instance State-change Notification"],
+  "detail": {
+    "state": ["stopped"]
+  }
+}
+```
+
+A rule matching this event pattern can trigger a Lambda function, SNS topic or another supported target.
+
+**EventBridge vs SNS vs SQS:** EventBridge — content-based event routing; SNS — message fan-out; SQS — durable message buffering and consumer polling. They can be combined in one architecture.
+
+**Project usage:** this project's closest analog to a *scheduled* EventBridge rule is Azure's own **timer-triggered Function** (`dr_backup`) — AWS's Terraform stack has no scheduled-Lambda equivalent, since `backup_verifier.py` is event-triggered by S3, not time-triggered.
+
+### AWS Step Functions vs Azure Logic Apps / Durable Functions
+
+Step Functions coordinates multiple tasks (Lambda functions or other services) into a visual, ordered workflow ("state machine") — handling workflow sequencing, retries, error handling, parallel execution and waiting, without hand-written orchestration logic. Azure's equivalents are **Logic Apps** (low-code, visual-designer workflows) and **Durable Functions** (code-first orchestration within Azure Functions).
+
+**State types:**
+
+- **Task:** executes work, such as invoking Lambda.
+- **Choice:** branches according to conditions.
+- **Parallel:** executes branches concurrently.
+- **Wait:** pauses execution.
+- **Map:** processes collections of items.
+- **Pass:** passes or transforms data.
+- **Succeed:** ends successfully.
+- **Fail:** ends with an error.
+
+**Standard vs Express workflows:**
+
+| Feature | Standard | Express |
+| --- | --- | --- |
+| Duration | Up to one year | Up to five minutes |
+| Execution history | Persistent | Limited retention |
+| Typical workload | Long-running workflows | High-volume short workflows |
+| Pricing model | State transitions | Execution duration and requests |
+
+A state can retry transient errors using backoff or catch errors and route them to a recovery branch.
+
+```text
+Order Received
+      |
+Validate Order
+      |
+Process Payment
+      |
+Reserve Inventory
+      |
+Send Confirmation
+      |
+Workflow Complete
+```
+
+If payment fails, the workflow can execute a refund or compensation step instead of simply stopping.
+
+**Important:** Step Functions coordinates workflows; Lambda executes individual pieces of business logic. They complement each other rather than replace each other.
+
+**Project usage:** this project's automation is simple enough (single-step remediation, single-step backup checkpoint) that neither Step Functions nor Logic Apps/Durable Functions is needed. The project currently uses a small event-driven Lambda for backup verification; a larger multi-step remediation or backup workflow could benefit from Step Functions.
 
 ### Amazon Kinesis vs Azure Event Hubs
 
@@ -2012,105 +2569,749 @@ Kinesis Data Streams ingests and retains high-volume, ordered streaming data for
 
 Amazon SES is a managed service for sending/receiving email at scale — transactional emails, marketing emails, or receiving/parsing inbound mail — commonly paired with Lambda or called directly via SDK, requiring domain/address verification before sending. **Azure Communication Services** (Email) plays the equivalent role on Azure. This project doesn't send email directly through either — `alert_email` in `alerts.tf` routes through SNS's own email-subscription delivery instead of a dedicated email-sending service.
 
-### Amazon EventBridge vs Azure Event Grid
-
-EventBridge is AWS's event bus — routing events (from AWS services, SaaS partners, or your own apps) to targets based on **rules** matching event content, and can run targets on a **schedule**. Unlike SNS's simple fan-out, EventBridge rules filter on the actual JSON payload. **Azure Event Grid** is the direct equivalent — schema-aware event routing with content-based filtering, subscribable by Functions, Service Bus, webhooks, and more. This project's closest analog to a *scheduled* EventBridge rule is Azure's own **timer-triggered Function** (`dr_backup`) — AWS's Terraform stack has no scheduled-Lambda equivalent, since `backup_verifier.py` is event-triggered by S3, not time-triggered.
-
-### AWS Step Functions vs Azure Logic Apps / Durable Functions
-
-Step Functions coordinates multiple Lambda functions (or other services) into a visual, ordered workflow ("state machine") — handling retries, error branches, parallel steps, and waiting, without hand-written orchestration logic. Azure's equivalents are **Logic Apps** (low-code, visual-designer workflows) and **Durable Functions** (code-first orchestration within Azure Functions). This project's automation is simple enough (single-step remediation, single-step backup checkpoint) that neither Step Functions nor Logic Apps/Durable Functions is needed.
-
 ### API Gateway vs Azure API Management
 
 API Gateway is a fully managed service for creating, publishing, and securing APIs at scale — traffic management, authorization, throttling, monitoring. It supports **REST APIs** (full-featured), **HTTP APIs** (lighter, cheaper, Lambda/HTTP proxying), and **WebSocket APIs** (persistent, bidirectional connections). **Azure API Management (APIM)** plays the equivalent role, fronting Azure Functions, App Services, or any backend with the same throttling/auth/monitoring feature set.
 
-### API Gateway Authentication and Abuse Prevention
+#### API Gateway Authentication and Abuse Prevention
 
 Three authorizer types: **IAM** (SigV4-signed, AWS-to-AWS), **Cognito User Pool authorizers** (validates a Cognito-issued JWT), and **Lambda authorizers** (custom allow/deny logic — API keys, third-party OAuth). Separately, **usage plans + API keys** and built-in **throttling** protect backends from a single noisy client, independent of authentication. APIM's equivalent mechanisms are **subscription keys** (API-key equivalent), **JWT validation policies** (Cognito-authorizer equivalent), and **rate-limit policies** (throttling equivalent). This project exposes its app directly through the ingress-nginx controller rather than API Gateway or APIM — the app's own `JWT_SECRET`/`API_KEY` (in `secrets.yaml`) implement authentication and rate limiting (`RATE_LIMIT_PER_MINUTE` in `configmap.yaml`) at the application layer instead of a managed API gateway layer.
 
-
 ---
 
-## NoSQL & Data Services — DynamoDB and Azure Cosmos DB
+## NoSQL and Data Services — DynamoDB and Azure Cosmos DB
+
+Amazon DynamoDB is a fully managed NoSQL database supporting key-value and document data models, designed for high availability, low-latency access and automatic scaling.
 
 ### DynamoDB Core Concepts
 
 A **Table** is a collection of data (a spreadsheet with no fixed columns). An **Item** is a single row/record. An **Attribute** is a single field on an item (columns can differ item to item — schema-less except for the primary key). The **Primary Key** uniquely identifies an item: **Simple** (Partition Key only, unique across the table) or **Composite** (Partition Key + Sort Key — the partition key groups related items, the sort key orders/uniquely identifies items within that group). **Azure Cosmos DB** maps onto the same shape: a **Container** (table-equivalent), **Items** (documents/rows), and a required **Partition Key** field playing the identical role.
 
-### GSI vs LSI
+```text
+Table: Orders
 
-A **Global Secondary Index (GSI)** can use a completely different partition key (and optional sort key) than the base table, has its own capacity, and can be added/removed after table creation. A **Local Secondary Index (LSI)** must share the base table's partition key, must be defined at creation time, and shares the base table's capacity. GSIs are far more common in practice for this flexibility. Cosmos DB indexes every property by default (an **automatic indexing policy**), making the GSI/LSI distinction largely moot there — you tune what's indexed rather than choosing which secondary index to add.
+Partition Key: customer_id
+Sort Key: order_date
+```
+
+This allows efficient retrieval of all orders belonging to a particular customer and querying orders within a date range.
+
+### Secondary Indexes — GSI vs LSI
+
+Secondary indexes allow alternative query patterns. A **Global Secondary Index (GSI)** can use a completely different partition key (and optional sort key) than the base table, has its own capacity, and can be added/removed after table creation — far more common in practice for this flexibility. A **Local Secondary Index (LSI)** must share the base table's partition key, must be defined at creation time, and shares the base table's capacity. GSIs support eventual consistency; LSIs support strongly consistent reads when requested. Cosmos DB indexes every property by default (an **automatic indexing policy**), making the GSI/LSI distinction largely moot there — you tune what's indexed rather than choosing which secondary index to add.
 
 ### Provisioned vs On-Demand Capacity
 
-**Provisioned** — specify read/write capacity units up front (optionally with Auto Scaling); cheaper at steady, predictable traffic. **On-Demand** — scales automatically with no capacity planning, billed per request; simpler and safer for unpredictable/spiky traffic, more expensive per-request at high steady volume. Cosmos DB offers the same two modes: **Provisioned throughput (RU/s)** and **Serverless**.
+**Provisioned** — specify read/write capacity units up front (optionally with Auto Scaling that adjusts throughput based on utilization targets); cheaper at steady, predictable traffic. **On-Demand** — scales automatically with no capacity planning, billed per request; simpler and safer for unpredictable/spiky traffic, more expensive per-request at high steady volume. Cosmos DB offers the same two modes: **Provisioned throughput (RU/s)** and **Serverless**.
+
+### Eventually Consistent vs Strongly Consistent Reads
+
+- Eventually consistent reads may temporarily return an older version of data.
+- Strongly consistent reads return the latest successful write, subject to supported table/index behavior.
+
+Strongly consistent reads are supported on tables and LSIs, but not GSIs or global-table replicas. See the CAP Theorem under Databases for the underlying trade-off.
 
 ### Partition Key Design and Hot Partitions
 
-DynamoDB/Cosmos DB distribute data across partitions based on a hash of the partition key. A poorly chosen key (e.g., a status field with only 3 values) causes a **"hot partition"** — most reads/writes concentrate on one physical partition, throttling throughput regardless of overall provisioned capacity. Good design (high cardinality, evenly distributed access patterns — `userId`, a composite key) spreads load evenly.
+DynamoDB/Cosmos DB distribute data across partitions based on a hash of the partition key. A poorly chosen key (e.g., a status field with only 3 values) causes a **"hot partition"** — most reads/writes concentrate on one physical partition, throttling throughput regardless of overall provisioned capacity. Good design (high cardinality, evenly distributed access patterns — `userId`, a composite key) spreads load evenly. Avoid keys that direct nearly all requests to one partition.
 
-**Project usage:** this project's application state lives in PostgreSQL/RDS (relational) and a small local SQLite file (`DB_SQLITE_PATH`) rather than DynamoDB or Cosmos DB — no NoSQL data store is currently provisioned by either Terraform or the Pulumi program.
+### DynamoDB Streams
 
-### CAP Theorem
+DynamoDB Streams capture changes to table items. A stream can record item modifications and trigger Lambda functions for event-driven processing.
 
-A distributed system can only guarantee two of three properties during a network partition: **Consistency** (every read sees the latest write), **Availability** (every request gets a response), and **Partition tolerance** (the system keeps working despite network splits). RDS/Azure Database for PostgreSQL (traditional, strongly-consistent, single-primary systems) prioritize consistency, potentially sacrificing availability during a failover window. DynamoDB/Cosmos DB default to **eventual consistency** for reads (favoring availability and partition tolerance) but offer opt-in **strongly consistent reads**, consuming more capacity in exchange for guaranteed up-to-date data.
+```text
+DynamoDB Table
+      |
+DynamoDB Streams
+      |
+Lambda Function
+      |
+SNS / SQS / Other Services
+```
 
-### Amazon Redshift vs Azure Synapse Analytics
+### Global Tables
 
-RDS/Azure Database for PostgreSQL are built for **OLTP** (many small, fast transactional reads/writes). **Redshift** is a managed **data warehouse** for **OLAP** (large, complex analytical queries scanning millions/billions of rows) using columnar storage and massively parallel execution. **Azure Synapse Analytics** is the direct equivalent on Azure. This project has no analytical/warehouse workload, so neither is provisioned.
+Global Tables replicate DynamoDB data across multiple AWS regions. They support multi-region applications and disaster recovery. Conflict resolution and concurrent writes must be considered when designing multi-region applications.
 
----
+### Transactions
 
-## Content Delivery & DNS
+DynamoDB supports transactional operations (`TransactWriteItems`, `TransactGetItems`). These provide ACID transaction capabilities across supported multiple items and tables.
 
-### AWS Global Accelerator vs CloudFront, and Azure's Equivalents
+### TTL — Time to Live
 
-Both AWS options use the provider's edge network for different traffic types. **CloudFront** caches and serves **HTTP(S) content** closer to users. **Global Accelerator** doesn't cache anything — it gives static Anycast IPs that route **any TCP/UDP traffic** onto AWS's private backbone as early as possible, improving performance for non-cacheable or non-HTTP workloads and enabling instant regional failover without a DNS change. Azure's equivalents are **Azure Front Door** (CloudFront-shaped — HTTP(S) CDN plus global L7 load balancing) and **Azure Traffic Manager** (DNS-based global routing, closer in spirit to Global Accelerator's failover role, though Traffic Manager works at the DNS layer rather than the network layer).
+TTL automatically expires items based on a timestamp attribute. Expired items are deleted asynchronously, not at an exact guaranteed time. Common use cases: session expiration, temporary tokens, short-lived records, temporary application data.
 
-### CDN
+### DAX — DynamoDB Accelerator
 
-A CDN is a network of servers positioned close to end users worldwide, each holding a cached copy of content, so a nearby edge location serves the request instead of round-tripping to the origin. This reduces latency and takes load off the origin. CloudFront is AWS's CDN; **Azure CDN**/**Azure Front Door** is Azure's.
+DAX is an in-memory cache designed specifically for DynamoDB. It reduces read latency for supported workloads by caching frequently accessed data. Use DAX when repeated reads are common and the application can tolerate the cache's consistency behavior.
 
-### CloudFront with S3 vs ALB Origin, and Azure's Equivalent
+### DynamoDB Backup and Recovery
 
-With an **S3 origin**, CloudFront is typically used for static assets, ideally with **Origin Access Control (OAC)** so the bucket itself stays fully private and reachable only through CloudFront. With an **ALB/custom origin**, CloudFront can front dynamic applications, terminate TLS at the edge, provide DDoS absorption (via Shield integration), and cache selectively based on cache-control headers. Azure Front Door offers the same two origin shapes (Blob Storage origin with private-endpoint-style access restriction, or an App Service/Application Gateway origin for dynamic content).
+Important capabilities: on-demand backups, point-in-time recovery (PITR), Global Tables, cross-region replication, and export to S3. PITR provides continuous backups for recovery to a supported point within the configured recovery window.
 
-**Project usage:** neither cloud's CDN is provisioned in this project — the ingress-nginx controller is reached directly (via NodePort locally, or whatever load balancer the cluster's cloud provider attaches to the `LoadBalancer`/`ClusterIP` Service in production), with no CloudFront/Front Door layer caching or absorbing traffic in front of it.
+### DynamoDB Best Practices
 
-### Amazon Route 53 vs Azure DNS
+- Design keys around access patterns.
+- Avoid hot partition keys.
+- Use GSIs only for required query patterns.
+- Choose on-demand or provisioned capacity based on workload.
+- Enable PITR for critical tables.
+- Use TTL for temporary records.
+- Monitor throttled requests.
+- Use conditional writes for concurrency control.
+- Use Streams for event-driven integrations.
 
-Route 53 is AWS's managed DNS service — translates domain names to IP addresses and can register domains outright ("Route 53" because DNS traditionally runs on port 53). **Azure DNS** is the direct equivalent for hosting zones and records; domain registration on Azure is typically handled through App Service Domains or a third-party registrar instead.
-
-### DNS Record Types
-
-- **A** — hostname → IPv4 address.
-- **AAAA** — hostname → IPv6 address.
-- **CNAME** — hostname → another hostname (can't be used at the zone apex/root).
-- **Alias** (AWS-specific) — like CNAME but works at the zone apex and points to AWS resources for free, with no extra lookup cost. Azure's equivalent is an **Alias record set**, serving the same zone-apex purpose for Azure resources.
-- **MX** — mail server routing.
-- **TXT** — arbitrary text, commonly used for domain verification (SPF/DKIM, certificate validation).
-
-**Project usage:** `base/ingress.yaml`'s `host: devops-app.local` is a placeholder A-record-style hostname meant for local `/etc/hosts` entries (see `.env.example`'s `INGRESS_HOST` comment) — no real Route 53/Azure DNS zone is provisioned by either IaC program; production overlays remove the fixed host entirely and expect whatever DNS the operator points at the cloud load balancer's own address.
-
-### Route 53 Routing Policies
-
-- **Simple** — single resource, no health checking.
-- **Weighted** — distribute traffic across resources by percentage (canary/A-B testing at the DNS level).
-- **Latency-based** — route to the region with lowest latency for the requester.
-- **Failover** — active-passive; route to a primary, switch to a secondary if its health check fails.
-- **Geolocation / Geoproximity** — route based on user location or bias traffic toward specific regions.
-- **Multivalue answer** — return multiple healthy IPs, basic client-side load distribution and health checking without a full load balancer.
-
-Azure DNS itself doesn't carry routing-policy logic the way Route 53 does — that logic instead lives one layer up, in **Azure Traffic Manager** (weighted, priority/failover, performance/latency, geographic — the same five ideas) or **Azure Front Door** (which adds latency-based and priority routing at the HTTP layer).
-
-### Route 53 Health Checks
-
-Route 53 sends automated HTTP/HTTPS/TCP requests to an endpoint at a configurable interval (default 30s) from multiple global locations, marking it unhealthy after a threshold of consecutive failures. Routing policies (Failover, Multivalue, Weighted) use this status to stop sending traffic to unhealthy endpoints — DNS itself has no concept of "down" without a health check attached. Traffic Manager's health checks work identically, feeding its own failover/priority routing.
-
+**Project usage:** this project's application state lives in PostgreSQL/RDS (relational) and a small local SQLite file (`DB_SQLITE_PATH`) rather than DynamoDB or Cosmos DB — no NoSQL data store is currently provisioned by either Terraform or the Pulumi program. DynamoDB would be appropriate for applications requiring highly scalable key-value or document access patterns.
 
 ---
 
-## Disaster Recovery, Backup & Compliance
+## Security, Compliance and the Well-Architected Framework
+
+### Well-Architected Framework — Six Pillars
+
+The AWS Well-Architected Framework provides architectural best practices for designing, operating and improving workloads on AWS. It helps identify architectural risks and improve reliability, security, performance, cost efficiency and sustainability. Azure's parallel framework, Microsoft's own **Well-Architected Framework**, covers the same five/six pillars almost one-for-one (Reliability, Security, Cost Optimization, Operational Excellence, Performance Efficiency).
+
+1. **Operational Excellence** — running and monitoring systems, continuously improving processes; the ability to operate, monitor and continuously improve workloads.
+2. **Security** — protecting data, systems, and assets through risk assessment and mitigation; protect identities, data, infrastructure and applications.
+3. **Reliability** — workloads performing their intended function correctly and consistently, recovering from failure and maintaining availability.
+4. **Performance Efficiency** — using computing resources efficiently, adapting as demand and technology evolve.
+5. **Cost Optimization** — avoiding unnecessary costs, understanding spend over time, and maximizing business value.
+6. **Sustainability** — minimizing environmental impact of cloud workloads.
+
+#### Operational Excellence
+
+Important practices: Infrastructure as Code, automated deployments, centralized monitoring, incident management, continuous improvement, and runbooks and operational playbooks. Example: Terraform, CloudWatch alarms and automated remediation.
+
+#### Security
+
+Important practices: least-privilege IAM, multi-factor authentication, encryption at rest and in transit, network segmentation, centralized audit logging, threat detection, and automated security checks. Example: IAM roles, KMS, CloudTrail, Security Hub and WAF.
+
+#### Reliability
+
+Important practices: Multi-AZ architecture, automated recovery, backup and restore testing, disaster recovery planning, retry and timeout mechanisms, fault isolation, and horizontal scaling. Example: Multi-AZ RDS, Auto Scaling Groups and cross-region backups.
+
+#### Performance Efficiency
+
+Important practices: select appropriate compute resources, use caching, monitor database performance, apply load testing, use managed and serverless services where appropriate, and scale based on demand. Example: CloudFront, ElastiCache, Lambda and DynamoDB.
+
+#### Cost Optimization
+
+Important practices: right-size EC2 instances, use Savings Plans or Reserved Instances where suitable, use Spot Instances for fault-tolerant workloads, apply S3 lifecycle policies, monitor NAT Gateway and data-transfer costs, delete unused resources, and use cost allocation tags.
+
+#### Sustainability
+
+Important practices: reduce idle resource consumption, right-size compute and storage, use managed services, optimize data transfer, improve application efficiency, and choose suitable AWS regions and architectures.
+
+#### AWS Well-Architected Tool and Review Process
+
+AWS provides the Well-Architected Tool to document workload architecture, review workloads against pillar questions and track improvement plans.
+
+1. Define the workload.
+2. Identify its business and technical requirements.
+3. Review each of the six pillars.
+4. Identify high-risk issues.
+5. Prioritize improvements.
+6. Implement changes.
+7. Reassess periodically.
+
+**Important:** the Well-Architected Framework is not a certification or a guarantee that an architecture cannot fail. It is a structured approach to continuously improving architecture quality.
+
+### Security Pillar in This Project
+
+Defense in depth applies at multiple layers: network isolation (private subnets for nodes/RDS, delegated subnet + Private DNS for Azure PostgreSQL, security-group/NSG chaining instead of open CIDRs), encryption at rest (KMS for EKS secrets and RDS storage; TLS-only storage accounts and default-encrypted PostgreSQL Flexible Server on Azure) and in transit (`PGSSLMODE=require`, HTTPS at the ingress layer), least-privilege identity (IRSA/Workload-Identity-scoped roles per controller, condition-restricted policies), audit trails (EKS `api`/`authenticator` logs, VPC Flow Logs), and secrets handling (Sealed Secrets for GitOps instead of plaintext manifests) — each addressing a different attack surface rather than relying on a single control.
+
+### AWS WAF vs Azure WAF
+
+Both operate at the application layer (Layer 7), filtering malicious traffic via customizable rules based on IP, headers, query parameters; both support managed rule groups, real-time monitoring, and CAPTCHA/bot-challenge features — AWS WAF attaches to CloudFront/ALB/API Gateway and other supported integrations, **Azure WAF** attaches to Application Gateway or Azure Front Door.
+
+#### AWS WAF Core Components
+
+- **Web ACL:** the main collection of traffic filtering rules.
+- **Rules:** conditions used to allow, block or count requests.
+- **Rule Groups:** collections of related rules.
+- **Managed Rule Groups:** prebuilt rules maintained by AWS or supported security vendors.
+- **IP Sets:** lists of IP addresses and CIDR ranges.
+- **Regex Pattern Sets:** patterns used to inspect request content.
+- **Rate-Based Rules:** detect excessive request rates.
+- **Logging:** records matching requests for security analysis.
+
+#### WAF Rule Actions
+
+- Allow: permit matching traffic.
+- Block: reject matching traffic.
+- Count: record matches without blocking.
+- CAPTCHA/Challenge: require additional verification where supported.
+
+#### Common Protection Rules
+
+SQL injection detection, cross-site scripting detection, known malicious IP blocking, rate limiting, geographic restrictions, bot protection, request-size restrictions, and custom header and URI validation.
+
+#### Rate-Based Rules and Managed Rule Groups
+
+Rate-based rules track request rates for defined aggregation keys, such as source IP, and apply configured actions when thresholds are exceeded. They are useful for controlling abusive clients and certain automated attacks, but are not a replacement for a full DDoS protection architecture.
+
+AWS Managed Rules provide protection against common web vulnerabilities and suspicious traffic patterns. Test rules in Count mode before switching to Block mode to reduce accidental blocking of legitimate users.
+
+#### WAF vs Security Groups vs Shield
+
+| Service | Main protection |
+| --- | --- |
+| Security Groups | Network traffic at ENI level |
+| NACL | Subnet-level network filtering |
+| AWS WAF | Application-layer request filtering |
+| AWS Shield | DDoS protection |
+| GuardDuty | Threat detection |
+
+#### WAF Best Practices
+
+- Begin with managed rule groups.
+- Use Count mode during testing.
+- Enable logging and monitoring.
+- Configure rate-based rules for sensitive endpoints.
+- Review false positives.
+- Protect login and authentication endpoints.
+- Monitor WAF request and blocked-request metrics.
+
+**Project usage:** the project currently exposes its application through Kubernetes ingress and does not provision AWS WAF or Azure WAF/Front Door. WAF could be added in front of a supported AWS load-balancing or CDN entry point; the ingress-nginx controller has no application-layer firewall in front of it today.
+
+### AWS Shield vs Azure DDoS Protection
+
+Both are managed DDoS protection operating primarily at Layers 3/4, guarding against volumetric/network-level attacks. **Shield Standard** is included free with every AWS account; **Shield Advanced** adds automatic application-layer mitigation and DRT access for a fee. **Azure DDoS Protection** has the same free "Network Protection" baseline (Basic, automatic) with a paid "IP Protection"/"Network Protection" Standard tier for advanced mitigation and rapid-response support.
+
+**Project usage:** this project relies on each cloud's free baseline DDoS protection (Shield Standard / Azure's basic DDoS protection) implicitly — no WAF, Shield Advanced, or Azure WAF/Front Door is currently provisioned by either Terraform or Pulumi.
+
+### GuardDuty, Security Hub, Inspector, Macie vs Microsoft Defender for Cloud
+
+- **GuardDuty** — continuously analyzes VPC Flow Logs, CloudTrail events, and DNS logs with machine learning to flag suspicious activity (compromised credentials, crypto-mining, unusual API calls).
+- **Security Hub** — aggregates findings from GuardDuty, Inspector, Macie, and third-party tools into one dashboard, checking resources against standards (CIS, PCI-DSS).
+- **Inspector** — scans EC2 instances, ECR images, and Lambda functions for known CVEs and unintended network exposure, rescanning continuously.
+- **Macie** — uses machine learning to discover and classify sensitive data (PII, credentials) in S3, flagging public/unencrypted buckets.
+
+**Microsoft Defender for Cloud** is Azure's consolidated equivalent of all four — threat detection (GuardDuty-equivalent), a unified security posture dashboard (Security Hub-equivalent), container/registry vulnerability scanning (Inspector-equivalent), and sensitive-data discovery in storage (Macie-equivalent) in one product rather than four separate services.
+
+**Project usage:** `monitoring/trivy` (referenced by `run.sh`'s `ENABLE_TRIVY` flag and `.env.example`'s `TRIVY_*` settings) is this project's own answer to Inspector/Defender-for-Cloud-style image scanning — an in-cluster **Trivy** deployment scanning for `HIGH,CRITICAL` vulnerabilities on a schedule, rather than relying on AWS Inspector or Defender for Cloud directly. Neither GuardDuty, Security Hub, Macie, nor their Defender-for-Cloud equivalent is currently provisioned by Terraform or Pulumi.
+
+### Compliance Frameworks — What They Ask of Infrastructure
+
+| Framework | Applies to | Typical infra-level expectations |
+| --- | --- | --- |
+| **SOC 2** (Type II) | SaaS/service providers | Access control, change management (PR review + IaC = evidence), logging, monitoring, incident response, vendor management |
+| **ISO/IEC 27001** | Any org with an ISMS | Risk assessment, Annex A controls, internal audit, continuous improvement |
+| **PCI DSS** | Card data | Network segmentation, encryption, vulnerability scanning, log retention, strict access |
+| **HIPAA** | US health data | Signed **BAA** with the cloud provider, encryption, audit logs, access control |
+| **GDPR** | EU residents' personal data | Lawful basis, data residency/transfer rules, erasure, breach notification within 72 h |
+| **India DPDP Act 2023** | Personal data of people in India | Consent and purpose limitation, security safeguards, breach notification, cross-border transfer rules (check the current Rules for timelines) |
+| **CIS Benchmarks** | Not law: hardening baselines | AWS/Azure Foundations, Linux, Kubernetes configuration checks |
+
+- **Shared responsibility again**: the provider's SOC 2/ISO/PCI report covers *their* layer. **Your workload is not compliant just because AWS/Azure is.** Get provider reports from **AWS Artifact** / **Azure Service Trust Portal** and map controls you own.
+- **Data residency**: pick regions deliberately; enforce with an **SCP** denying other regions (`aws:RequestedRegion`) or **Azure Policy "Allowed locations"**; keep keys, backups, and logs in-region too.
+- Evidence you will be asked for: access reviews, CloudTrail/Activity Log retention, encryption settings, patch status, backup restore tests, DR test results, change history (Git).
+
+### Baselines and Posture Tools
+
+CIS Benchmarks (AWS, Azure, Kubernetes, Linux) are the common yardstick. Scan with **Prowler**, **ScoutSuite**, **Trivy**, **Checkov**, **kube-bench**; continuously with **AWS Config conformance packs + Security Hub standards** or **Azure Policy initiatives + Defender for Cloud**.
+
+### Most Common Cloud Breach Patterns
+
+Check yourself against this list: publicly readable S3/blob · access keys committed to Git · wildcard IAM (`Action:*`, `Resource:*`) · IMDSv1 + SSRF · SSH/RDP/DB ports open to `0.0.0.0/0` · unpatched/unscanned images · publicly shared snapshots · no MFA on root/admin · exposed Kubernetes API/dashboard · overly broad CI roles.
+
+### If an Access Key Leaks (Runbook)
+
+1. **Deactivate immediately** (don't wait to understand it): `aws iam update-access-key --user-name U --access-key-id AKIA... --status Inactive`. AWS may also auto-attach `AWSCompromisedKeyQuarantine` for keys found on public GitHub.
+2. **Investigate**: `aws cloudtrail lookup-events --lookup-attributes AttributeKey=AccessKeyId,AttributeValue=AKIA...`. Look for new IAM users/roles/keys, instances in unusual regions (crypto-mining), new Lambda functions, S3 reads, changed trust policies.
+3. **Contain and clean**: delete attacker-created resources and identities, rotate anything the key could read (DB passwords, other secrets), check billing.
+4. **Remove from Git history** (`git filter-repo`/BFG) — **but treat the key as compromised regardless**; history scrubbing doesn't un-leak it.
+5. **Prevent**: pre-commit/CI secret scanning (**gitleaks**, **trufflehog**, GitHub push protection), prefer roles/OIDC over keys, least-privilege, alarms on root/key use.
+
+---
+
+## Governance and Multi-Account Strategy
+
+### AWS Organizations and Multi-Account Strategy vs Azure Management Groups
+
+AWS Organizations is a service that centrally manages multiple AWS accounts as one unit — consolidated billing, shared guardrails, easier environment separation. Instead of placing every workload in one AWS account, companies commonly use **separate accounts per environment or team** for security, billing, compliance and operational isolation, since a full account boundary is a much stronger blast-radius limit than IAM alone. **Azure Management Groups** play the equivalent role, grouping multiple **subscriptions** (Azure's account-boundary-equivalent) under shared policy and billing.
+
+#### Core Components
+
+- **Management Account:** the central account used to manage the organization.
+- **Member Accounts:** individual AWS accounts belonging to the organization.
+- **Organizational Units (OUs):** logical groups of accounts.
+- **Service Control Policies (SCPs):** define the maximum permissions available to accounts and principals within an organization.
+- **Consolidated Billing:** combines billing across member accounts.
+
+```text
+Organization
+├── Management Account
+├── Security OU
+│   ├── Log Archive Account
+│   └── Security Tooling Account
+├── Infrastructure OU
+│   ├── Network Account
+│   └── Shared Services Account
+├── Workloads OU
+│   ├── Production Account
+│   └── Development Account
+└── Sandbox OU
+    └── Experiment Account
+```
+
+#### AWS Organizations Best Practices
+
+- Use separate accounts for production, development and security.
+- Keep the management account free of application workloads.
+- Apply SCPs at OU level.
+- Centralize audit logs.
+- Use delegated administrators for supported security services.
+- Enable consolidated billing and cost allocation.
+- Avoid broad exceptions that weaken organization-wide controls.
+
+### Service Control Policies vs Azure Policy at the Management-Group Level
+
+An **SCP** is applied at the AWS Organizations level (account, OU, or org-wide) and defines the **maximum available permissions** for every principal in that scope — it never *grants* permissions, only restricts what IAM policies can allow (IAM policies must still grant the required actions); even the root user cannot exceed what an SCP permits. Azure Policy applied at a **Management Group** scope plays the same guardrail role (e.g. "no region except X may ever be used," "storage accounts can never allow public blob access") that no individual subscription admin can override, though mechanically it works through policy assignment/deny effects rather than an IAM-permission ceiling.
+
+Example: deny deletion of CloudTrail trails.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Deny",
+    "Action": "cloudtrail:DeleteTrail",
+    "Resource": "*"
+  }]
+}
+```
+
+An SCP can prevent even an account administrator from performing a prohibited action, subject to AWS service exceptions and management-account behavior.
+
+### AWS Control Tower — Landing Zone Automation
+
+AWS Control Tower automates the creation and governance of a multi-account AWS environment. It builds on AWS Organizations and provides a standardized landing zone.
+
+- **Landing Zone:** the governed multi-account environment.
+- **Account Factory:** creates new accounts using standardized configurations.
+- **Guardrails:** preventive, detective and proactive governance controls.
+- **Controls:** predefined governance requirements implemented through supported AWS services.
+- **Audit Account:** central security and compliance visibility.
+- **Log Archive Account:** centralized storage for audit and configuration logs.
+
+**Preventive vs detective controls:** preventive controls stop prohibited actions, often using SCPs. Detective controls identify non-compliant configurations using services such as AWS Config. Proactive controls evaluate resources before provisioning through supported infrastructure deployment mechanisms.
+
+| Feature | Organizations | Control Tower |
+| --- | --- | --- |
+| Account management | Yes | Yes, through Organizations |
+| OU management | Yes | Yes |
+| SCP management | Yes | Provides managed controls |
+| Landing zone automation | No complete landing-zone workflow | Yes |
+| Account Factory | No | Yes |
+| Governance dashboard | Limited | Yes |
+
+**Remember:** Organizations is the underlying multi-account management service. Control Tower provides an opinionated, automated governance framework on top of it.
+
+**Project relevance:** the current project has separate AWS infrastructure configurations but does not provision a complete multi-account Control Tower landing zone.
+
+### Landing Zones and Multi-Account Layout
+
+A **landing zone** is the pre-built, governed foundation new workloads land in:
+
+```text
+Organization root
+├── Security OU        → log-archive account (immutable org-wide CloudTrail/Config), security-tooling account
+├── Infrastructure OU  → shared networking (Transit Gateway, DNS), CI/CD tooling
+├── Workloads OU
+│   ├── Prod OU        → one account per app/team
+│   └── NonProd OU     → dev / staging accounts
+└── Sandbox OU         → experiments with hard budget caps
+```
+
+Baseline guardrails (SCPs/Azure Policy): deny disabling CloudTrail/GuardDuty, deny leaving the organization, region allow-list, deny root-user use, require encryption, block public S3/blob. Tooling: **AWS Control Tower / Landing Zone Accelerator**, **Azure Landing Zones** (Management Group hierarchy), GCP **Organization → Folders → Projects**.
+
+### Finding Your Account ID / Subscription ID
+
+The AWS **Account ID** (12 digits) is in the Console's top-right menu or via `aws sts get-caller-identity`. The Azure **Subscription ID** is in the Portal's subscription blade or via `az account show`. Both matter because IAM policies/role assignments and resource ARNs/IDs are frequently scoped by this identifier — getting it right (and knowing whose account/subscription it is) is a real security-relevant detail, not just a label.
+
+---
+
+## Infrastructure as Code — Terraform, Pulumi and CloudFormation
+
+### Infrastructure as Code (IaC)
+
+IaC means describing infrastructure (servers, networks, permissions) in text files instead of manually clicking through a console. Benefits: version-controlled (see exactly what changed and when, in Git), repeatable (spin up an identical environment for staging/prod), and reviewable (a teammate reads a pull request before infrastructure changes go live) — instead of undocumented, hard-to-reproduce manual changes.
+
+**Project usage:** `platform/infra/terraform` (AWS) and `platform/infra/Pulumi` (Azure) are two independent, standalone IaC programs for the same application, selected by `run.sh`'s `select_cloud_provider` step — neither imports from the other or from `run.sh` itself, by explicit design (see the "STANDALONE BY DESIGN" docstrings throughout the Pulumi files and the header comments in the Terraform files).
+
+### CloudFormation vs Terraform vs Pulumi
+
+CloudFormation and ARM/Bicep are single-cloud, free, and natively understand rollback-on-failure and drift detection against that cloud's own state. **Terraform** is multi-cloud (AWS, Azure, GCP, Kubernetes, and more in one tool), uses HCL instead of JSON/YAML, and manages its own state file (stored/secured separately, e.g., in S3). **Pulumi** is also multi-cloud, but instead of a bespoke templating language, it uses a real general-purpose programming language (Python, in this project) — meaning loops, conditionals, functions, and imports are just the language's own, rather than HCL's more limited expression syntax, at the cost of needing that language's runtime and dependency management (`requirements.txt`, a virtualenv) alongside the tool itself.
+
+**Project usage:** this project picks **Terraform** for AWS (portability, readable syntax) and **Pulumi** for Azure specifically in Python (letting `env_loader.py` and `function_packaging.py` reuse plain Python code — `pathlib`, `zipfile`, `dotenv` — directly inside the infrastructure program itself, something HCL alone can't do as naturally). Both still avoid CloudFormation/Bicep to keep the two cloud targets structurally similar to reason about side by side.
+
+| Feature | CloudFormation | CDK | Terraform | Pulumi |
+| --- | --- | --- | --- | --- |
+| Main interface | YAML/JSON | Programming language | HCL | Programming language |
+| AWS integration | Native | Native | Provider-based | Provider-based |
+| Output | Stack resources | CloudFormation template | Terraform plan/state | Pulumi deployment/state |
+| Abstraction | Template resources | Constructs | Modules | Components |
+| Multi-cloud | AWS-focused | AWS-focused | Yes | Yes |
+
+### AWS CloudFormation
+
+AWS's native IaC service — resources are defined in a JSON/YAML **template**, and CloudFormation creates/updates/deletes them as a single **stack**, tracking dependencies automatically and determining the order in which resources are created, updated and deleted. Azure's closest native equivalent is **ARM templates** / **Bicep** (Bicep being to ARM roughly what a cleaner HCL-like syntax is to raw JSON).
+
+#### Parameters
+
+Parameters allow users to supply values when creating or updating stacks.
+
+```yaml
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+```
+
+#### Mappings and Conditions
+
+- **Mappings:** static lookup tables used to select values.
+- **Conditions:** control whether resources or properties are created based on supplied values.
+
+```yaml
+Conditions:
+  IsProduction: !Equals
+    - !Ref Environment
+    - prod
+```
+
+#### Outputs and Exports
+
+Outputs expose information from a stack, such as resource IDs, endpoints and ARNs. Exports allow other stacks in the same account and region to import supported values.
+
+#### Intrinsic Functions
+
+Common functions: `Ref`, `Fn::GetAtt`, `Fn::Sub`, `Fn::Join`, `Fn::ImportValue`, `Fn::If`, `Fn::FindInMap`. They allow templates to reference resources and construct dynamic values.
+
+#### Nested Stacks
+
+Nested stacks allow a large template to be divided into reusable smaller templates. This improves modularity and makes complex infrastructure easier to maintain.
+
+#### Change Sets
+
+A Change Set previews proposed changes before a stack update. It helps identify which resources will be added, modified or replaced.
+
+#### Stack Policies
+
+Stack policies protect selected resources from accidental updates. They are particularly useful for protecting critical database resources.
+
+#### Drift Detection
+
+Drift detection compares the actual resource configuration against the expected configuration recorded by CloudFormation. It helps identify manual changes that bypass Infrastructure as Code.
+
+#### Rollback and Failure Handling
+
+CloudFormation can roll back failed stack operations according to the operation type and configured behavior. However, not every resource change can be reversed without consequences. Database replacement and deletion require particular care.
+
+#### CloudFormation Best Practices
+
+- Use reusable templates.
+- Separate environments.
+- Use parameters and outputs appropriately.
+- Review Change Sets.
+- Enable drift detection.
+- Protect critical resources.
+- Store templates in version control.
+- Avoid embedding credentials in templates.
+- Use appropriate rollback and failure settings.
+
+### AWS Cloud Development Kit (CDK)
+
+AWS CDK is an Infrastructure as Code framework that lets developers define AWS infrastructure using familiar programming languages. Supported languages include TypeScript, JavaScript, Python, Java, C# and Go through its supported toolchain. Instead of writing every resource directly in CloudFormation YAML, developers use code to define constructs.
+
+```text
+Developer Code
+      |
+AWS CDK Application
+      |
+CDK Constructs
+      |
+CDK Synthesis
+      |
+CloudFormation Template
+      |
+CloudFormation Deployment
+      |
+AWS Resources
+```
+
+CDK synthesizes infrastructure code into a CloudFormation template. CloudFormation then deploys the resources.
+
+#### CDK Constructs
+
+Constructs are reusable building blocks. Three common levels:
+
+- **L1 Constructs:** direct representations of CloudFormation resources.
+- **L2 Constructs:** higher-level abstractions with sensible defaults.
+- **L3 Constructs:** patterns that combine multiple resources into common architectures (for example, a complete application architecture containing networking, compute and load balancing).
+
+#### CDK Example — S3 Bucket
+
+```python
+from aws_cdk import (
+    App,
+    Stack,
+    aws_s3 as s3
+)
+from constructs import Construct
+
+class StorageStack(Stack):
+    def __init__(self, scope: Construct, id: str, **kwargs):
+        super().__init__(scope, id, **kwargs)
+
+        s3.Bucket(
+            self,
+            "ApplicationBucket",
+            versioned=True,
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL
+        )
+
+app = App()
+StorageStack(app, "StorageStack")
+app.synth()
+```
+
+#### Important CDK Commands
+
+```bash
+cdk init app --language python
+
+cdk synth
+
+cdk diff
+
+cdk bootstrap
+
+cdk deploy
+
+cdk destroy
+```
+
+- `cdk synth`: generates the CloudFormation template.
+- `cdk diff`: compares the proposed deployment with the deployed stack.
+- `cdk bootstrap`: prepares an environment for CDK deployments.
+- `cdk deploy`: deploys the stack.
+- `cdk destroy`: deletes the stack and its resources, subject to protection and service constraints.
+
+#### CDK Best Practices
+
+- Prefer reusable constructs.
+- Separate stacks by responsibility.
+- Review synthesized templates.
+- Use `cdk diff` before deployment.
+- Protect stateful resources.
+- Never hardcode credentials.
+- Use environment-specific configuration.
+- Keep dependencies and CDK versions controlled.
+- Test infrastructure code before deployment.
+
+**Project relevance:** the project currently uses Terraform for AWS and Pulumi for Azure. CDK is another AWS IaC option, particularly when infrastructure definitions benefit from reusable programming-language abstractions.
+
+### Terraform State File
+
+Terraform needs to remember what it already created so it doesn't recreate or lose track of resources. The **state file** (`terraform.tfstate`) is Terraform's record of "here's what I've built and its current settings." Losing it is a real problem — Terraform stops knowing what already exists (see the state-loss recovery scenario under Troubleshooting). Pulumi keeps the conceptually identical thing — a **stack state** — managed by default in Pulumi's own backend (or self-hosted in S3/Azure Blob) rather than a single file you point at yourself.
+
+### Remote State and Locking
+
+Never keep production state on a laptop. State holds resource IDs and often **secrets in plaintext**. It must be shared, versioned, encrypted, access-controlled, and **locked** so two applies can't run at once.
+
+```hcl
+terraform {
+  required_version = ">= 1.10"
+  backend "s3" {
+    bucket       = "myorg-terraform-state"
+    key          = "devops-app/prod/terraform.tfstate"
+    region       = "ap-south-1"
+    encrypt      = true
+    use_lockfile = true      # S3-native locking (Terraform 1.10+); the DynamoDB lock table is deprecated
+  }
+}
+```
+
+```hcl
+# Azure equivalent: blob lease provides locking automatically
+terraform {
+  backend "azurerm" {
+    resource_group_name  = "tfstate-rg"
+    storage_account_name = "tfstate12345"
+    container_name       = "tfstate"
+    key                  = "devops-app/prod.tfstate"
+    use_azuread_auth     = true
+  }
+}
+```
+
+- Enable **bucket versioning** (restore a previous state), block public access, restrict who can read state.
+- Split state by environment **and** by blast-radius layer (network / data / app) rather than one giant state.
+- Bootstrap problem: the state bucket itself is created by a tiny separate config or CLI script.
+- **OpenTofu** is the community, Linux Foundation fork of Terraform (after HashiCorp's 2023 license change); mostly drop-in compatible, adds features like state encryption.
+- **Pulumi**: `pulumi login s3://bucket` / `azblob://container` (or Pulumi Cloud); config secrets are encrypted per stack (`pulumi config set --secret`, `--secrets-provider awskms://...` or `azurekeyvault://...`); `pulumi stack export/import` is the state backup/repair path; `pulumi refresh` syncs state with reality.
+
+### `terraform plan` and `terraform apply`
+
+`terraform plan` compares code to current state and shows what *would* change, without making changes — a dry run. `terraform apply` executes those changes against real resources. Pulumi's equivalents are `pulumi preview` and `pulumi up`.
+
+**Project usage:** `run.sh`'s `select_infra_action` menu (Plan / Apply / Destroy) maps directly onto `terraform plan|apply|destroy`, invoked by `deploy_infra.sh` with `INFRA_ACTION`/`CLOUD_PROVIDER` passed through from the interactive menu or `.env`.
+
+### `.terraform.lock.hcl`
+
+Terraform's dependency lock file, maintained automatically by `terraform init`, pinning exact provider versions and their cryptographic hashes so every `terraform apply` — on any machine, at any time — resolves to identical provider code, not just a version *range*. Pulumi's equivalent is the language runtime's own lock file (`requirements.txt` pinning exact package versions, or a generated `Pulumi.lock`/virtualenv freeze), serving the same reproducibility purpose one layer down at the Python-package level rather than the provider-plugin level.
+
+**Project usage:** `.terraform.lock.hcl` pins `hashicorp/aws ~> 5.0` to the exact resolved `5.100.0`, plus `archive`, `cloudinit`, `null`, `time`, and `tls` providers pulled in transitively by the `terraform-aws-modules/eks/aws` and `vpc/aws` modules — none of these are referenced directly in this project's own `.tf` files, only by the community modules it depends on.
+
+### Terraform Providers and Modules
+
+A **provider** is the plugin translating HCL resource blocks into actual API calls for one platform (`hashicorp/aws`). A **module** is a reusable, versioned bundle of resources — this project consumes two community modules rather than hand-writing every EKS/VPC resource: `terraform-aws-modules/vpc/aws` (`vpc.tf`) and `terraform-aws-modules/eks/aws` plus `iam/aws//modules/iam-role-for-service-accounts-eks` (`eks.tf`). Pulumi has an equivalent **Component Resource** concept for bundling reusable infrastructure, though this project's Azure program instead factors reuse as plain Python functions (`create_distributed_storage`, `create_self_healing`, `create_dr_backup`) in separate files, each returning the resources it created — a lighter-weight pattern than a full Pulumi Component Resource, appropriate for a single-stack program rather than a package meant for reuse across many stacks.
+
+### Terraform Language Essentials
+
+| Concept | Key point |
+| --- | --- |
+| `variable` | Typed (`string`, `number`, `list(...)`, `map(...)`, `object({...})`), with `default`, `validation {}`, `sensitive = true` |
+| `locals`, `output`, `data` | Computed values / exported values / read-only lookups of existing things |
+| `count` vs `for_each` | **Prefer `for_each` with stable keys.** With `count`, deleting list item 0 shifts every index and Terraform destroys/recreates the rest |
+| `dynamic` blocks, `for` expressions | Generate repeated nested blocks / transform collections |
+| `lifecycle` | `create_before_destroy`, `prevent_destroy` (guard DBs), `ignore_changes` (autoscaler-managed fields), `replace_triggered_by`, `precondition`/`postcondition` |
+| `depends_on` | Only when no attribute reference exists (see Implicit Resource Dependencies below) |
+| `moved {}` | Rename/move a resource in code **without** destroying it |
+| `import {}` | Adopt an existing resource into state (Terraform 1.5+) |
+| Functions | `merge`, `lookup`, `try`, `coalesce`, `cidrsubnet`, `templatefile`, `jsonencode` |
+
+```hcl
+variable "buckets" {
+  type = map(object({ versioning = bool }))
+}
+resource "aws_s3_bucket" "this" {
+  for_each = var.buckets
+  bucket   = "${var.app_name}-${each.key}"
+}
+
+moved { from = aws_s3_bucket.files  to = aws_s3_bucket.files_primary }
+
+import { to = aws_s3_bucket.legacy  id = "my-existing-bucket" }   # then: terraform plan -generate-config-out=generated.tf
+```
+
+### Implicit Resource Dependencies (`depends_on`)
+
+Terraform infers dependency ordering automatically from attribute references, but it does **not** infer dependencies through policy-attachment resources that only reference an already-existing role ARN — so an explicit `depends_on` is required wherever creation order matters but no attribute reference exists.
+
+**Project usage:**
+
+```hcl
+# backup_verifier.tf
+resource "aws_s3_bucket_notification" "backup_uploaded" {
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.backup_verifier[0].arn
+    events              = ["s3:ObjectCreated:*"]
+  }
+  # S3 validates the permission when creating the notification, but nothing
+  # here references the permission resource itself:
+  depends_on = [aws_lambda_permission.s3_invoke_backup_verifier]
+}
+```
+
+Without the explicit `depends_on`, S3 could reject the notification config because the invoke permission doesn't exist yet. `aws_eks_addon.ebs_csi` similarly declares `depends_on = [module.eks]` since nothing about the addon's attributes references the cluster module directly. Pulumi's equivalent, `ResourceOptions(depends_on=[...])`, is used the same way throughout the Azure program — e.g. `dns_vnet_link` before `pg_server`, and `account_ready` (a `Sleep` resource) before the storage container, since a freshly created storage account isn't always immediately consistent.
+
+### Everyday CLI Workflow
+
+```bash
+terraform fmt -recursive && terraform validate     # style + syntax (run in CI too)
+terraform init -upgrade                            # fetch providers/modules, update the lock file
+terraform plan -out=tfplan                         # save the plan...
+terraform apply tfplan                             # ...apply exactly what was reviewed
+terraform plan -detailed-exitcode                  # exit 0 = no change, 1 = error, 2 = changes (use for drift checks)
+terraform plan -refresh-only                       # detect drift without proposing changes
+terraform apply -replace=aws_instance.web          # force recreate one resource (replaces deprecated `taint`)
+terraform state list ; terraform state show ADDR   # inspect
+terraform state mv A B ; terraform state rm ADDR   # refactor state (prefer moved {} blocks)
+terraform force-unlock <LOCK_ID>                   # only after confirming no apply is running
+terraform providers lock -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_arm64   # lock file works on every OS in the team
+TF_LOG=DEBUG terraform plan 2> debug.log           # provider/API-level debugging
+```
+
+> `-target` is an emergency scalpel, not a workflow. If you need it routinely, your state is too big.
+
+### Environments: Directories vs Workspaces vs Stacks
+
+| Approach | Verdict |
+| --- | --- |
+| **Directory per environment** (`envs/dev`, `envs/prod`) calling shared **versioned modules** | Recommended. Separate state, separate credentials, safe diffs |
+| Terraform **workspaces** | Same code and backend, different state; easy to `apply` to prod by accident. Fine for short-lived copies, weak for dev/prod separation |
+| **Terragrunt** | Wrapper to keep backends/inputs DRY across many directories |
+| **Pulumi stacks** | `pulumi stack init prod`; per-stack config; the built-in equivalent |
+
+### Drift
+
+Drift = reality differs from code (someone edited in the console, an autoscaler changed a value). Detect with a **scheduled `plan -detailed-exitcode`** (or `pulumi refresh --diff`); resolve by re-applying code, `import`, or updating code to match. Prevent by removing human write access in prod (SCPs / Azure Policy / least-privilege roles) so changes go through Git.
+
+### IaC in CI/CD
+
+1. PR: `fmt -check`, `validate`, `tflint`, security scan (**Trivy config**/**Checkov**; tfsec merged into Trivy), policy-as-code (**OPA/Conftest**, Sentinel), cost diff (**Infracost**), then `terraform plan` posted as a PR comment.
+2. Merge to main: human approval for prod, `terraform apply tfplan` with **short-lived cloud credentials (OIDC/role), not stored keys**.
+3. Pin everything: `required_version`, `required_providers` with `~>`, module versions (Git tags/registry), **commit `.terraform.lock.hcl`**.
+4. Tools that run this loop: Atlantis, HCP Terraform, Spacelift, env0, GitHub Actions, or your Jenkins pipeline.
+
+### Configuration Management and Image Building
+
+**Terraform/Pulumi create infrastructure (provision). Ansible configures what runs on it.** Typical flow: Terraform makes the VM → Ansible (or cloud-init) installs/configures → or Packer bakes the result into an image once.
+
+#### Ansible
+
+Agentless (SSH), YAML playbooks, **idempotent modules**, push model.
+
+```yaml
+# site.yml
+- hosts: web
+  become: true
+  vars: { nginx_port: 8080 }
+  tasks:
+    - name: Install nginx
+      ansible.builtin.package: { name: nginx, state: present }
+    - name: Render config
+      ansible.builtin.template: { src: nginx.conf.j2, dest: /etc/nginx/nginx.conf, mode: "0644" }
+      notify: Reload nginx
+    - name: Ensure running
+      ansible.builtin.service: { name: nginx, state: started, enabled: true }
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service: { name: nginx, state: reloaded }
+```
+
+```bash
+ansible all -i inventory.ini -m ping                          # connectivity
+ansible-playbook -i inventory.ini site.yml --check --diff     # dry run showing changes
+ansible-playbook -i inventory.ini site.yml --limit web01 -e nginx_port=9090
+ansible-inventory -i aws_ec2.yml --graph                      # dynamic inventory from the cloud API
+ansible-vault encrypt_string 's3cr3t' --name db_password      # encrypted values in Git
+```
+
+> `shell`/`command` tasks are **not** idempotent unless you add `creates:`/`changed_when:`. Use real modules.
+
+#### Packer
+
+**Packer** builds a **golden image** (AMI / Azure managed image) from a template: launch a temp VM, run provisioners (shell/Ansible), snapshot it. `packer init && packer validate . && packer build .`. Also **EC2 Image Builder** / **Azure Image Builder**. Trade-off: *bake* (fast, consistent boot, rebuild to change) vs *fry* (generic image + user-data/Ansible at boot: flexible, slower, more can fail at runtime).
+
+### Pulumi's Standalone-by-Design Pattern
+
+Every Pulumi file in this project (`storage.py`, `self_healing.py`, `dr.py`, `postgres_backup_identity.py`, `monitoring_alerts.py`, `function_packaging.py`) follows the same shape: a single function taking everything it needs as explicit keyword arguments (`enabled`, `app_name`, `rg`, resources from other functions), with no imports from `run.sh`, sibling shell scripts, or the Terraform side of the repo. `__main__.py` wires them together by call order, and each one can be individually disabled via a boolean flag (`enable_self_healing`, `enable_dr_backup`, `enable_cloud_storage`) read through `get_env()`. This mirrors the same "standalone" principle `main.tf`/`rds.tf`/`vpc.tf` follow on the Terraform side — each `.tf` file readable and reasoned about mostly on its own, wired together only through `locals` and resource references in `main.tf`.
+
+### `env_loader.py` — a Single Source of Configuration Truth
+
+Both IaC programs are designed to run correctly on their own — `cd platform/infra/pulumi && pulumi up` should work whether or not it was launched through `run.sh`. `env_loader.py` implements this for the Azure side: it walks upward from its own file location looking for a `.env` file (respecting an explicit `ENV_FILE` override), loads it via `python-dotenv`, and only `setdefault`s values that aren't already present in the process environment — so anything `run.sh` already exported (or a CI/CD secret) always wins over the file. `get_env()`/`get_secret()` in `__main__.py` then layer Pulumi's own `pulumi config` on top as the highest-priority override. The Terraform side achieves the equivalent precedence more simply, since `run.sh` sources `.env` with `set -a` before invoking `deploy_infra.sh`, so every `TF_VAR_*` value is already a real environment variable by the time Terraform runs — no separate discovery/loading code is needed on that side.
+
+---
+
+## Disaster Recovery and Backup
 
 ### RTO, RPO and the Four Standard DR Strategies
 
@@ -2123,39 +3324,88 @@ Route 53 sends automated HTTP/HTTPS/TCP requests to an endpoint at a configurabl
 
 **Project usage:** this project sits at the **Pilot Light** tier on both clouds — only the database's backups replicate cross-region continuously; compute (EKS/AKS nodes, the app itself) is not pre-provisioned in a second region and would need to be stood up from the same Terraform/Pulumi code against the DR region if the primary region were lost.
 
+See also HA vs Backup vs Disaster Recovery under Databases for how high availability, backups and DR differ.
+
 ### AWS Backup vs Manually Scripted Snapshots, and Azure Backup
 
 **AWS Backup** is a centralized, policy-based backup service managing schedules, retention, and cross-region/cross-account copying across many services from one place, with built-in compliance reporting — reducing the operational burden of maintaining custom scripts per service. Manually scripted snapshots (this project's approach) work but require building and maintaining scheduling, retention, and cross-region copy logic independently. **Azure Backup** is AWS Backup's direct equivalent — a centralized vault-based service for VMs, Azure Files, and databases; this project uses PostgreSQL Flexible Server's own built-in geo-redundant backup instead of a separate Azure Backup vault, for the same "let the managed database handle it" reasoning as RDS's own automated backups.
 
-### This Project's Actual DR & Backup Pipeline — AWS Side
+**Project usage:** this project currently uses native RDS automated backups, cross-region replication and logical PostgreSQL dumps to S3 rather than AWS Backup as its centralized backup control plane.
+
+#### Backup Plan
+
+A backup plan defines which resources are backed up, backup frequency, backup windows, retention periods, lifecycle transitions, and copy actions to other regions or accounts.
+
+```text
+Backup Plan
+├── Daily Backup Rule
+│   ├── Schedule: Daily
+│   ├── Retention: 35 days
+│   └── Destination: Primary Vault
+└── Weekly Backup Rule
+    ├── Schedule: Weekly
+    ├── Retention: 12 weeks
+    └── Copy: DR Region Vault
+```
+
+#### Backup Vault
+
+A backup vault stores recovery points and controls access to them. Important capabilities: vault access policies, encryption through KMS, cross-account backup access, Vault Lock, and backup auditing and reporting.
+
+#### Backup Vault Lock
+
+Vault Lock provides WORM-style protection for backup recovery points. Compliance mode prevents deletion or modification of protected recovery points during the configured retention period, even by highly privileged users. Governance mode allows authorized administrators to bypass the lock.
+
+#### Cross-Account and Cross-Region Backups
+
+Production backups should ideally be copied to a separate backup account and, where required, a separate region. This reduces the risk that a compromised production account can destroy both primary resources and backups.
+
+#### Restore Testing
+
+A successful backup job does not prove that an application can be recovered. Regularly test: database restoration, EC2 restoration, file and object restoration, cross-account recovery, cross-region recovery, and application connectivity after restoration. Measure actual RTO and RPO against business requirements.
+
+#### AWS Backup Best Practices
+
+- Use centralized backup policies.
+- Apply backup plans through tags where appropriate.
+- Separate backup administration from production administration.
+- Use Vault Lock for appropriate critical workloads.
+- Enable cross-account and cross-region copies.
+- Monitor failed backup jobs.
+- Schedule restore testing.
+
+### This Project's DR and Backup Pipeline — AWS Side
 
 Three independent layers work together, deliberately kept in separate files so each can be reasoned about (and disabled) on its own:
 
 - **RDS automated-backup replication** (`dr.tf`, gated by `var.enable_dr_backup`) — `aws_db_instance_automated_backups_replication` continuously replicates RDS's own automated backups into `var.cloud_storage_replica_region`, encrypted under a region-local KMS key (`aws_kms_key.rds_dr`). This is RDS's *native* backup-replication feature, not a custom script — no Lambda, no timeouts, retention handled entirely by RDS via `var.dr_snapshot_retention_days`.
-- **Logical `pg_dump` backups to S3** (`postgres-backup-cronjob.yaml`, IRSA via `irsa.tf`) — a daily CronJob (`schedule: "0 3 * * *"`) dumps and gzips the database, then uploads it to the primary S3 bucket under `postgres/`, where `storage.tf`'s cross-region replication (see Storage above) copies it into the replica bucket automatically, and lifecycle rules expire both copies after 14 days.
-- **Backup verification** (`backup_verifier.tf` + `lambda/backup_verifier.py`) — an S3 `ObjectCreated` event on the `postgres/*.sql.gz` prefix triggers a Lambda that checks the object is over 1KB and that its gzip-decompressed head actually contains the string `PostgreSQL database dump`, then publishes a `BackupVerified`/`BackupSizeBytes` CloudWatch metric. `alerts.tf`'s `backup_missing` alarm (see the `treat_missing_data` discussion above) pages if no *verified* backup has landed in 26 hours — catching not just "the CronJob didn't run" but "the CronJob ran and produced a corrupt file," which a simpler "did the CronJob succeed" check would miss.
+- **Logical `pg_dump` backups to S3** (`postgres-backup-cronjob.yaml`, IRSA via `irsa.tf`) — a daily CronJob (`schedule: "0 3 * * *"`) dumps and gzips the database, then uploads it to the primary S3 bucket under `postgres/`, where `storage.tf`'s cross-region replication (see Storage) copies it into the replica bucket automatically, and lifecycle rules expire both copies after 14 days.
+- **Backup verification** (`backup_verifier.tf` + `lambda/backup_verifier.py`) — an S3 `ObjectCreated` event on the `postgres/*.sql.gz` prefix triggers a Lambda that checks the object is over 1KB and that its gzip-decompressed head actually contains the string `PostgreSQL database dump`, then publishes a `BackupVerified`/`BackupSizeBytes` CloudWatch metric. `alerts.tf`'s `backup_missing` alarm (see the `treat_missing_data` discussion under Monitoring) pages if no *verified* backup has landed in 26 hours — catching not just "the CronJob didn't run" but "the CronJob ran and produced a corrupt file," which a simpler "did the CronJob succeed" check would miss.
 
-### This Project's Actual DR & Backup Pipeline — Azure Side
+### This Project's DR and Backup Pipeline — Azure Side
 
 - **PostgreSQL Flexible Server's built-in geo-redundant backup** (`__main__.py`, `backup=dbforpostgresql.BackupArgs(geo_redundant_backup="Enabled")`) is the direct analog to `dr.tf`'s RDS automated-backup replication — a managed-database-native feature rather than a custom script.
 - **Logical `pg_dump` backups to Blob Storage** (`postgres-backup-cronjob.yaml` on the `prod-azure` overlay) mirror the AWS CronJob exactly, with the upload step swapped for `az storage blob upload --auth-mode login` authenticating via the pod's Workload Identity federated credential instead of an IRSA role — no static storage key ever appears in the container.
 - **DR checkpoint function** (`dr.py` + `functions/dr_backup/__init__.py`) is this project's Azure-side answer to `backup_verifier.py`, but simpler by design: rather than verifying each individual dump's contents, it runs on a 24-hour timer and records the PostgreSQL server's own reported `backup_retention_days`/`geo_redundant_backup` state into a timestamped checkpoint blob in the GRS storage account — an auditable record that backups were confirmed present, without paying for a second full logical dump on every run. The module's own docstring is explicit that a Lambda-style content-verifying dump check is intentionally out of scope for this "free/cheap setup," and can be added later as a heavier, opt-in job if needed.
 - **Self-healing** (`self_healing.py` + `monitoring_alerts.py`) has no AWS-side equivalent in this project at all — it's additional resilience unique to the Azure stack, automatically restarting the PostgreSQL server or reconciling the AKS node pool when an Azure Monitor alert fires, rather than only alerting a human.
 
-### Sealed Secrets as a GitOps-Compatible Backup/Recovery Mechanism
-
-`install_sealed_secrets.sh` installs the Bitnami Sealed Secrets controller plus the matching `kubeseal` CLI; `seal_secrets.sh` then encrypts `devops-app-secrets` against the cluster's public key and writes a `SealedSecret` manifest safe to commit to Git (`overlays/prod/devops-app-sealed-secret.yaml`, `overlays/prod-azure/devops-app-sealed-secret.yaml`). This matters for DR specifically because it means the *encrypted* secret material survives in Git even if the cluster (and its unencrypted Secrets) is lost — recreating the cluster and re-applying the same SealedSecret manifest recovers the application's credentials without anyone re-typing them, as long as the Sealed Secrets controller's private key itself was backed up separately (a step this project's scripts don't automate, and worth calling out as a real gap: losing that private key without a backup means every existing SealedSecret becomes permanently undecryptable). `base/kustomization.yaml`'s own comment block documents this trade-off explicitly: the placeholder `secrets.yaml` in `base/` is fine for direct/script mode (where `deploy_kubernetes.sh` overwrites the placeholders before apply) but must be swapped for a real secret manager before using ArgoCD/ GitOps in production, since nothing in GitOps mode would otherwise overwrite those placeholder values.
-
+For how Sealed Secrets contribute to GitOps recovery, see Sealed Secrets under Key Management, Secrets and Certificates.
 
 ---
 
-## Cost Optimization, Billing & Support
+## Cost Optimization, Billing and Support
+
+### Pricing Models and Free Tiers
+
+Both AWS and Azure bill **pay-as-you-go** — no upfront commitment, billed per hour/second/request/GB. AWS's Free Tier has three types often confused: **Always Free** (permanently free within a limit), **12-Months Free** (free for the account's first year), and **Trials** (short-term credits expiring on a schedule regardless of usage). Azure has an analogous mix of always-free amounts and a 12-month free allowance on select services.
+
+**Project usage:** `variables.tf` and `outputs.tf` are written specifically around AWS Free Tier sizing (`db.t3.micro`, `t3.large` nodes, `estimated_free_tier_note` output); the Azure Pulumi program mirrors this with Burstable AKS/PostgreSQL SKUs (`Standard_D2s_v6`, `Standard_B1ms`) chosen from Azure's free-for-12-months list.
 
 ### Free Tier Resources Used in This Project
 
-**AWS, within Free Tier (12 months):** `t3.micro`/`t2.micro`-class EC2 (750 hrs/month), `db.t3.micro` RDS (750 hrs/month), 30 GB gp2 EBS, 20 GB RDS storage, first 100 GB data transfer out. **Outside Free Tier (always billed):** the EKS control plane (~$73/month flat fee), the NAT Gateway (~$32/month + per-GB processing), and RDS Multi-AZ if enabled (roughly doubles DB cost) — the dominant cost drivers once the 12-month window expires, called out explicitly in `outputs.tf`'s `estimated_free_tier_note`.
+**AWS, within Free Tier (12 months):** `t3.micro`/`t2.micro`-class EC2 (750 hrs/month), `db.t3.micro` RDS (750 hrs/month), 30 GB gp2 EBS, 20 GB RDS storage, first 100 GB data transfer out. **Outside Free Tier (always billed):** the EKS control plane (≈ $73/month flat fee), the NAT Gateway (≈ $32/month + per-GB processing), and RDS Multi-AZ if enabled (roughly doubles DB cost) — the dominant cost drivers once the 12-month window expires, called out explicitly in `outputs.tf`'s `estimated_free_tier_note`.
 
-**Azure, within its free/low-cost allowances:** the AKS **Free** control-plane tier (no flat control-plane fee at all, unlike EKS), a Burstable `Standard_B1ms` PostgreSQL Flexible Server (Azure's free-for-12-months SKU), and a single Burstable `Standard_D2s_v6` AKS node. **Costs that remain:** the AKS node VM(s) themselves, GRS storage replication (~$0.05/GB-month), and the Consumption-plan Function Apps (1M free executions/month, so effectively free at this project's low invocation volume).
+**Azure, within its free/low-cost allowances:** the AKS **Free** control-plane tier (no flat control-plane fee at all, unlike EKS), a Burstable `Standard_B1ms` PostgreSQL Flexible Server (Azure's free-for-12-months SKU), and a single Burstable `Standard_D2s_v6` AKS node. **Costs that remain:** the AKS node VM(s) themselves, GRS storage replication (≈ $0.05/GB-month), and the Consumption-plan Function Apps (1M free executions/month, so effectively free at this project's low invocation volume).
 
 ### Reducing Ongoing Cost Without Sacrificing Availability
 
@@ -2169,30 +3419,31 @@ Three independent layers work together, deliberately kept in separate files so e
 
 **Loop:** *Inform* (visibility, tagging, showback) → *Optimize* (rightsize, commit, delete) → *Operate* (budgets, reviews, accountability). Track **unit cost** (cost per request/customer/GB), not just the total.
 
-**Immediate wins (roughly in order of effort)**
+#### Immediate Wins (roughly in order of effort)
+
 1. **Delete idle things**: unattached volumes/IPs, old snapshots, forgotten load balancers, stopped instances with big disks, dev clusters.
-2. **Schedule non-prod** off-hours: running ~50 of 168 hours per week saves ~70%.
-3. **gp2 → gp3** volumes (~20% cheaper, better baseline). Move old data to cheaper S3 tiers via lifecycle.
+2. **Schedule non-prod** off-hours: running about 50 of 168 hours per week saves about 70%.
+3. **gp2 → gp3** volumes (about 20% cheaper, better baseline). Move old data to cheaper S3 tiers via lifecycle.
 4. **Rightsize** with Compute Optimizer / Azure Advisor; use **Graviton/ARM** where the image supports it.
 5. **Commit** (Savings Plans / Reservations) only for the steady baseline, typically 60–80% coverage, not 100%.
 6. **Spot** for stateless/fault-tolerant work.
 
-**Hidden costs (check these first on a surprise bill)**
+#### Hidden Costs (check these first on a surprise bill)
 
 | Culprit | Why it bites |
-|---|---|
+| --- | --- |
 | NAT Gateway data processing | Every GB from private subnets to the internet/S3 is charged; use gateway endpoints |
 | **Cross-AZ traffic** | Chatty microservices, replication, load balancers |
-| **Public IPv4 addresses** | ~$3.65/month each, all of them |
-| **CloudWatch Logs ingestion** (~$0.50/GB) and custom metrics | Debug logging in production |
+| **Public IPv4 addresses** | ≈ $3.65/month each, all of them |
+| **CloudWatch Logs ingestion** (≈ $0.50/GB) and custom metrics | Debug logging in production |
 | Idle load balancers, NAT Gateways | Billed hourly regardless of traffic |
 | S3 versioning, incomplete multipart uploads, small-object request costs | Silent accumulation |
 | KMS / Secrets Manager API calls and per-secret fees | High-frequency calls add up |
-| EKS **Extended Support** | Clusters on Kubernetes versions past standard support cost ~$0.60/hr instead of ~$0.10/hr: upgrade on time |
+| EKS **Extended Support** | Clusters on Kubernetes versions past standard support cost ≈ $0.60/hr instead of ≈ $0.10/hr: upgrade on time |
 | Burstable instances in *unlimited* mode | Surplus CPU credits billed |
 | Data egress | Internet and cross-region |
 
-**Tagging for cost**: tags only appear in cost reports after you **activate them as cost-allocation tags** in the Billing console (up to ~24 h delay). Enforce required tags with SCPs/Azure Policy/`tflint`. Set budgets with alerts (and actions), turn on **Cost Anomaly Detection**, and estimate before building: **AWS/Azure Pricing Calculators**, **Infracost** on every Terraform PR.
+**Tagging for cost**: tags only appear in cost reports after you **activate them as cost-allocation tags** in the Billing console (up to about 24 h delay). Enforce required tags with SCPs/Azure Policy/`tflint`. Set budgets with alerts (and actions), turn on **Cost Anomaly Detection**, and estimate before building: **AWS/Azure Pricing Calculators**, **Infracost** on every Terraform PR.
 
 ### Billing Granularity
 
@@ -2205,6 +3456,14 @@ Most compute (EC2 Linux, Lambda, Azure Functions Consumption) bills **per second
 3. **Free Tier usage alerts** — a built-in alert as Free Tier limits approach, on both clouds.
 
 **Project usage:** `alerts.tf` sets up `aws_sns_topic.alerts` with an email subscription for the *infrastructure health* alarms (RDS CPU, storage, backups) — not a spend-threshold Budget alarm; adding an `aws_budgets_budget`/Azure Cost Management budget alongside it would close this gap on both sides.
+
+### Cleanup Checklist Before Walking Away
+
+1. Running **EC2 instances/Azure VMs** (stopped ≠ free — attached disks still bill).
+2. **RDS instances/PostgreSQL Flexible Servers** (stopping only pauses billing for up to 7 days on AWS before auto-restart; Azure has no equivalent auto-restart but still bills storage while stopped).
+3. **NAT Gateways** and unattached **Elastic/Public IPs** — both bill even when idle.
+4. **EBS/managed-disk volumes and snapshots** left behind after terminating an instance.
+5. **Load Balancers** (ALB/NLB, Azure Load Balancer/Application Gateway) — billed per hour whether or not they receive traffic.
 
 ### AWS Support Plan Tiers
 
@@ -2219,25 +3478,9 @@ Azure's equivalent tiers are **Basic** (free), **Developer**, **Standard**, and 
 
 Trusted Advisor automatically scans an account and flags recommendations across cost, security, fault tolerance, performance, and service limits — idle instances, open security groups, unattached Elastic IPs, unversioned S3 buckets. Basic checks are free; full checks require Business/Enterprise support. **Azure Advisor** plays the identical role, free for every subscription, across the same cost/security/reliability/performance/operational-excellence categories.
 
-### First 10 Minutes on a New Account
-
-1. Enable **MFA on the root user/Global Administrator**.
-2. Create an individual **IAM Identity Center user or IAM user** (AWS) / **Azure AD user with RBAC** (Azure) for yourself — stop using the top-level identity for anything but account-level tasks.
-3. Set a **Billing/Budget alert**.
-4. Pick a **home Region**.
-5. Install and configure the **CLI** (`aws configure` / `az login`) for scripting or Terraform/Pulumi.
-
-### Cleanup Checklist Before Walking Away
-
-1. Running **EC2 instances/Azure VMs** (stopped ≠ free — attached disks still bill).
-2. **RDS instances/PostgreSQL Flexible Servers** (stopping only pauses billing for ~7 days on AWS before auto-restart; Azure has no equivalent auto-restart but still bills storage while stopped).
-3. **NAT Gateways** and unattached **Elastic/Public IPs** — both bill even when idle.
-4. **EBS/managed-disk volumes and snapshots** left behind after terminating an instance.
-5. **Load Balancers** (ALB/NLB, Azure Load Balancer/Application Gateway) — billed per hour whether or not they receive traffic.
-
 ---
 
-## CI/CD & Governance
+## CI/CD and Delivery
 
 ### AWS CodePipeline, CodeBuild, CodeDeploy vs Azure DevOps / GitHub Actions
 
@@ -2245,28 +3488,7 @@ Trusted Advisor automatically scans an account and flags recommendations across 
 
 **Project usage:** this project uses **neither** CodePipeline/CodeBuild/CodeDeploy nor Azure DevOps — CI/CD is handled by a self-hosted **Jenkins** stack (`platform/cicd/jenkins`, driven by `run.sh`'s Jenkins menu and `.env.example`'s `JENKINS_*` settings) for build/test, and **ArgoCD** (`deploy_argo.sh`, `ARGOCD_*` settings) for GitOps-style continuous deployment in production mode — chosen specifically so the same pipeline tooling works identically regardless of which cloud (or no cloud, for local development) the Kubernetes manifests ultimately deploy to, rather than locking the pipeline itself to one provider's CI/CD product.
 
-### AWS Organizations and Multi-Account Strategy vs Azure Management Groups
-
-AWS Organizations centrally manages multiple accounts as one unit — consolidated billing, shared guardrails, easier environment separation. Companies commonly use **separate accounts per environment or team**, since a full account boundary is a much stronger blast-radius limit than IAM alone. **Azure Management Groups** play the equivalent role, grouping multiple **subscriptions** (Azure's account-boundary-equivalent) under shared policy and billing.
-
-### IAM Identity Center vs Azure AD Single Sign-On
-
-IAM Identity Center (formerly AWS SSO) centrally manages human access across multiple accounts through a single sign-on — log in once, get a portal listing every account/role you're allowed to assume. It's the recommended way for people (as opposed to workloads) to access AWS, reserving plain IAM users for edge cases. Azure AD (Entra ID) provides the equivalent single-sign-on experience natively across every subscription in a tenant, without a separate "Identity Center" product being necessary.
-
-### Finding Your Account ID / Subscription ID
-
-The AWS **Account ID** (12 digits) is in the Console's top-right menu or via `aws sts get-caller-identity`. The Azure **Subscription ID** is in the Portal's subscription blade or via `az account show`. Both matter because IAM policies/role assignments and resource ARNs/IDs are frequently scoped by this identifier — getting it right (and knowing whose account/subscription it is) is a real security-relevant detail, not just a label.
-
-### Service Control Policies vs Azure Policy at the Management-Group Level
-
-An **SCP** is applied at the AWS Organizations level (account, OU, or org-wide) and defines the **maximum available permissions** for every principal in that scope — it never *grants* permissions, only restricts what IAM policies can allow; even the root user cannot exceed what an SCP permits. Azure Policy applied at a **Management Group** scope plays the same guardrail role (e.g. "no region except X may ever be used," "storage accounts can never allow public blob access") that no individual subscription admin can override, though mechanically it works through policy assignment/deny effects rather than an IAM-permission ceiling.
-
-### VPC Endpoints vs Azure Private Link / Private Endpoint
-
-A VPC Endpoint allows private connectivity from a VPC to supported services **without traversing the public internet or a NAT Gateway**. A **Gateway Endpoint** (S3 and DynamoDB only) is a free route-table entry. An **Interface Endpoint** (most other services — Secrets Manager, ECR, STS, CloudWatch Logs) provisions an ENI with a private IP, billed hourly plus per-GB — enabling truly private access from private EKS nodes with no NAT Gateway needed at all. **Azure Private Link**/**Private Endpoint** is the direct equivalent, provisioning a private IP for a PaaS service (Key Vault, Storage, PostgreSQL Flexible Server) inside your VNet.
-
-**Project usage:** the Azure Pulumi program already achieves the *outcome* VPC Interface Endpoints would provide for RDS — a fully private database with no public endpoint — via PostgreSQL Flexible Server's **delegated subnet + Private DNS Zone** integration (`db_subnet`, `private_dns_zone`, `dns_vnet_link` in `__main__.py`), which is architecturally closer to VNet integration than to Private Link, but achieves the same "never touches the public internet" property `rds.tf`'s private-subnet placement achieves on AWS.
-
+For keyless pipeline authentication, see CI/CD Without Static Keys: OIDC Federation under Identity and Access Management; for pipeline-based Terraform workflows, see IaC in CI/CD.
 
 ---
 
@@ -2282,7 +3504,7 @@ Elastic Beanstalk is a fully managed service simplifying deployment — you uplo
 
 ---
 
-## Troubleshooting & Operational Scenarios
+## Troubleshooting and Operational Scenarios
 
 ### EKS/AKS Nodes NotReady and Image Pull Failures
 
@@ -2293,11 +3515,11 @@ Elastic Beanstalk is a fully managed service simplifying deployment — you uplo
 5. Check **security groups/NSGs** — does the node's rule set allow outbound HTTPS (443) to reach the registry?
 6. Inspect `kubelet` logs on the node (via SSM Session Manager or Azure Bastion) for the specific pull error.
 
-**Project usage:** this project pulls from **Docker Hub** rather than ECR/ACR (see the Container Registries topic above), so step 4/5 here reduce to "can the node reach the public internet on 443" — via the NAT Gateway (AWS) or the AKS node's outbound path (Azure) — rather than a registry-specific private-endpoint check.
+**Project usage:** this project pulls from **Docker Hub** rather than ECR/ACR (see Container Registries), so steps 4 and 5 reduce to "can the node reach the public internet on 443" — via the NAT Gateway (AWS) or the AKS node's outbound path (Azure) — rather than a registry-specific private-endpoint check.
 
 ### Reviewing an Open-Security-Group Request
 
-A request to open `0.0.0.0/0` ingress on port 5432 for RDS/PostgreSQL Flexible Server "to make debugging easier" should be rejected: exposing the database port to the entire internet turns one leaked or brute-forced credential into full data compromise, and even strong credentials become a target for automated scanning. Scoped alternatives: SG-to-SG/NSG-to-NSG rules restricted to the application's own security group (already this project's pattern — see the SG-to-SG topic above), a bastion host or SSM/Azure Bastion port-forwarding session for ad-hoc debugging, or a temporary, time-boxed CIDR rule for one engineer's IP, removed immediately after use — never a permanent open rule.
+A request to open `0.0.0.0/0` ingress on port 5432 for RDS/PostgreSQL Flexible Server "to make debugging easier" should be rejected: exposing the database port to the entire internet turns one leaked or brute-forced credential into full data compromise, and even strong credentials become a target for automated scanning. Scoped alternatives: SG-to-SG/NSG-to-NSG rules restricted to the application's own security group (already this project's pattern — see SG-to-SG References vs CIDR Ranges), a bastion host or SSM/Azure Bastion port-forwarding session for ad-hoc debugging, or a temporary, time-boxed CIDR rule for one engineer's IP, removed immediately after use — never a permanent open rule.
 
 ### Recovering from Lost Terraform State or a Lost Pulumi Stack
 
@@ -2316,7 +3538,7 @@ First, check for **S3 versioning** on the Terraform state bucket (or Pulumi's ow
 ### "Can't Connect to X" in the Cloud — Layered Checklist
 
 | Layer | Check | Tool |
-|---|---|---|
+| --- | --- | --- |
 | App | Listening on `0.0.0.0`, not `127.0.0.1`? Health check path/port correct? | `ss -ltnp` on the host |
 | OS firewall | `ufw`/`firewalld`/`nft` rules | `sudo nft list ruleset` |
 | Security group / NSG | Inbound **and** outbound; SG-to-SG references correct? | Console/CLI |
@@ -2329,7 +3551,7 @@ First, check for **S3 versioning** on the Terraform state bucket (or Pulumi's ow
 ### Terraform / Pulumi Failure Modes
 
 | Symptom | Cause → fix |
-|---|---|
+| --- | --- |
 | `Error acquiring the state lock` | Another run is active, or a crashed run left the lock. Confirm nothing is running, then `terraform force-unlock <ID>` (S3 native lock = a `.tflock` object) |
 | `resource already exists` | Created outside Terraform → `import` (or `import {}` block) |
 | Plan shows unexpected changes | Console edits (drift), provider upgrade, or a default changed. Read the diff; `plan -refresh-only` |
@@ -2337,7 +3559,7 @@ First, check for **S3 versioning** on the Terraform state bucket (or Pulumi's ow
 | `Provider produced inconsistent result` | Often eventual consistency or a provider bug; re-run, pin/upgrade the provider |
 | Resource would be destroyed unexpectedly | `count` index shift or renamed resource → `for_each`/`moved {}`; guard important ones with `prevent_destroy` |
 | `Cycle` error | Circular reference; break it with a separate resource or data source |
-| State lost/corrupt | Restore the previous **S3 version**; else re-`import` (see recovery section) |
+| State lost/corrupt | Restore the previous **S3 version**; else re-`import` (see the recovery section above) |
 | Secrets visible in state | Expected; restrict state access, encrypt the backend, use secret managers for runtime values |
 
 ### Surprise Bill Triage
@@ -2357,7 +3579,7 @@ First, check for **S3 versioning** on the Terraform state bucket (or Pulumi's ow
 
 ### Nodes Won't Scale Out / Pods Pending
 
-Check in order: quotas (`VcpuLimitExceeded`) → capacity (`InsufficientInstanceCapacity`: try another AZ/type) → **subnet IP exhaustion** (see VPC CNI sizing above) → node group `max_size` reached → autoscaler/HPA events (`kubectl describe pod`, `kubectl -n kube-system logs <cluster-autoscaler>`) → taints/affinity that no node satisfies → EBS volume stuck in the wrong AZ (zonal resource!).
+Check in order: quotas (`VcpuLimitExceeded`) → capacity (`InsufficientInstanceCapacity`: try another AZ/type) → **subnet IP exhaustion** (see Subnet Sizing for Kubernetes on VPC CNI) → node group `max_size` reached → autoscaler/HPA events (`kubectl describe pod`, `kubectl -n kube-system logs <cluster-autoscaler>`) → taints/affinity that no node satisfies → EBS volume stuck in the wrong AZ (zonal resource!).
 
 ### Instance Unreachable or Status Checks Failing
 
@@ -2367,7 +3589,11 @@ Check in order: quotas (`VcpuLimitExceeded`) → capacity (`InsufficientInstance
 
 ### Expired or Invalid Certificates
 
-`echo | openssl s_client -connect host:443 -servername host 2>/dev/null | openssl x509 -noout -dates -issuer`. ACM auto-renew fails if the **DNS validation CNAME was deleted**; cert-manager: `kubectl describe certificate,certificaterequest,order,challenge`. Monitor expiry with an alarm at 30 and 7 days.
+```bash
+echo | openssl s_client -connect host:443 -servername host 2>/dev/null | openssl x509 -noout -dates -issuer
+```
+
+ACM auto-renew fails if the **DNS validation CNAME was deleted**; cert-manager: `kubectl describe certificate,certificaterequest,order,challenge`. Monitor expiry with an alarm at 30 and 7 days.
 
 ---
 
